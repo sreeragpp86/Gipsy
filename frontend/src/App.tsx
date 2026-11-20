@@ -3,7 +3,7 @@ import { TelemetryStrip } from './components/TelemetryStrip'
 import { TranscriptArea } from './components/TranscriptArea'
 import { CommandBar } from './components/CommandBar'
 import { ExecutionDrawer } from './components/ExecutionDrawer'
-import { useMockController } from './hooks/useMockController'
+import { useGipsySocket } from './hooks/useGipsySocket'
 import type { AssistantState } from './types/hud'
 
 const STATE_BADGES: Record<AssistantState, { label: string; dot: string; text: string; border: string }> = {
@@ -41,20 +41,21 @@ const STATE_BADGES: Record<AssistantState, { label: string; dot: string; text: s
 
 export function App() {
   const {
-    state,
+    status,
+    assistantState,
     isMicActive,
+    isDrawerOpen,
+    setIsDrawerOpen,
     telemetry,
     dialogue,
     logs,
-    isDrawerOpen,
-    setIsDrawerOpen,
+    sendCommand,
+    setOverrideState,
     toggleMic,
-    executePipeline,
-    selectState,
     clearLogs,
-  } = useMockController()
+  } = useGipsySocket()
 
-  const currentBadge = STATE_BADGES[state]
+  const currentBadge = STATE_BADGES[assistantState]
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-between bg-[#0b0e14] px-4 py-6 text-slate-100 selection:bg-cyan-500 selection:text-black">
@@ -70,6 +71,16 @@ export function App() {
               <div className="flex items-center gap-2">
                 <h1 className="text-sm font-semibold tracking-tight text-white">Gipsy</h1>
                 <span className="font-mono text-[10px] text-slate-500">v0.1.0</span>
+                <span
+                  className={`inline-block h-1.5 w-1.5 rounded-full ${
+                    status === 'connected'
+                      ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                      : status === 'connecting'
+                      ? 'bg-amber-400 animate-pulse'
+                      : 'bg-rose-500'
+                  }`}
+                  title={`WebSocket ${status}`}
+                />
               </div>
               <p className="text-[11px] text-slate-400">Local Voice & OS Control Surface</p>
             </div>
@@ -91,11 +102,11 @@ export function App() {
         />
 
         <div className="relative rounded-2xl border border-white/[0.06] bg-slate-900/40 p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_12px_32px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl">
-          <Visualizer state={state} />
+          <Visualizer state={assistantState} />
 
           <div className="mt-2 text-center">
             <span className="font-mono text-[11px] uppercase tracking-wider text-slate-400">
-              Core State: <span className="font-semibold text-slate-200">{state.replace('_', ' ')}</span>
+              Core State: <span className="font-semibold text-slate-200">{assistantState.replace('_', ' ')}</span>
             </span>
           </div>
         </div>
@@ -103,11 +114,11 @@ export function App() {
         <TranscriptArea dialogue={dialogue} />
 
         <CommandBar
-          state={state}
+          state={assistantState}
           isMicActive={isMicActive}
           onToggleMic={toggleMic}
-          onSubmitCommand={executePipeline}
-          onSelectState={selectState}
+          onSubmitCommand={sendCommand}
+          onSelectState={setOverrideState}
         />
 
         <ExecutionDrawer
@@ -120,7 +131,7 @@ export function App() {
 
       <footer className="relative z-10 mt-6 flex items-center justify-between text-[11px] text-slate-400">
         <span className="font-mono">Decoupled Architecture • React + Tailwind CSS v4</span>
-        <span className="font-mono">Port 5173 ⇄ 8000</span>
+        <span className="font-mono">ws://localhost:8000/ws</span>
       </footer>
     </div>
   )

@@ -1,4 +1,4 @@
-import { Activity, Cpu, HardDrive, Wifi } from 'lucide-react'
+import { Activity, Battery, BatteryCharging, Cpu, HardDrive, Wifi } from 'lucide-react'
 import type { TelemetryData } from '../types/hud'
 
 interface TelemetryStripProps {
@@ -31,9 +31,23 @@ export function TelemetryStrip({
           </span>
         </div>
 
+        {telemetry.battery && (
+          <div className="flex items-center gap-1.5 text-slate-400">
+            {telemetry.battery.power_plugged ? (
+              <BatteryCharging className="h-3.5 w-3.5 text-emerald-400" />
+            ) : (
+              <Battery className="h-3.5 w-3.5 text-slate-400" />
+            )}
+            <span className="font-medium uppercase tracking-wider text-[10px] text-slate-400">PWR</span>
+            <span className="font-mono text-slate-200 tabular-nums">
+              {telemetry.battery.percent}%
+            </span>
+          </div>
+        )}
+
         <div className="flex items-center gap-1.5 text-slate-400">
           <Wifi className={`h-3.5 w-3.5 ${telemetry.isConnected ? 'text-emerald-400' : 'text-rose-400'}`} />
-          <span className="font-medium uppercase tracking-wider text-[10px] text-slate-400">PING</span>
+          <span className="font-medium uppercase tracking-wider text-[10px] text-slate-400">LINK</span>
           <span className="font-mono text-slate-200 tabular-nums">{telemetry.pingMs}ms</span>
         </div>
       </div>
