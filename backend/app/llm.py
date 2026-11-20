@@ -174,11 +174,12 @@ async def run_gipsy_pipeline(content: str, manager):
                             try:
                                 chunk = json.loads(line)
                                 token = chunk.get("message", {}).get("content", "")
-                                full_text += token
-                                await manager.broadcast({
-                                    "type": "stream_chunk",
-                                    "chunk": token,
-                                })
+                                if token:
+                                    full_text += token
+                                    await manager.broadcast({
+                                        "type": "stream_chunk",
+                                        "chunk": token,
+                                    })
                             except Exception:
                                 pass
 
