@@ -5,8 +5,9 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
+from app.llm import run_gipsy_pipeline
 from app.telemetry import get_system_telemetry
-from app.websocket_manager import manager, process_text_command
+from app.websocket_manager import manager
 
 
 async def telemetry_loop():
@@ -79,7 +80,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
             if msg_type == "text_command":
                 content = data.get("content", "")
-                asyncio.create_task(process_text_command(content))
+                asyncio.create_task(run_gipsy_pipeline(content, manager))
             elif msg_type == "set_state":
                 state = data.get("state", "IDLE")
                 await manager.broadcast({

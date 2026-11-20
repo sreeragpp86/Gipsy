@@ -111,18 +111,55 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
               }
               return prev
             })
+          } else if (msgType === 'stream_chunk') {
+            setDialogue((prev) => {
+              const last = prev[prev.length - 1]
+              if (last && last.sender === 'assistant' && last.isStreaming) {
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...last,
+                    text: last.text + payload.chunk,
+                  },
+                ]
+              }
+              return [
+                ...prev,
+                {
+                  id: `stream-${Date.now()}`,
+                  sender: 'assistant',
+                  text: payload.chunk,
+                  timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+                  isStreaming: true,
+                },
+              ]
+            })
           } else if (msgType === 'assistant_message') {
             const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-            setDialogue((prev) => [
-              ...prev,
-              {
-                id: `msg-${Date.now()}`,
-                sender: 'assistant',
-                text: payload.content,
-                timestamp: timeString,
-                tool: payload.tool,
-              },
-            ])
+            setDialogue((prev) => {
+              const last = prev[prev.length - 1]
+              if (last && last.sender === 'assistant' && last.isStreaming) {
+                return [
+                  ...prev.slice(0, -1),
+                  {
+                    ...last,
+                    text: payload.content || last.text,
+                    isStreaming: false,
+                    tool: payload.tool || last.tool,
+                  },
+                ]
+              }
+              return [
+                ...prev,
+                {
+                  id: `msg-${Date.now()}`,
+                  sender: 'assistant',
+                  text: payload.content,
+                  timestamp: timeString,
+                  tool: payload.tool,
+                },
+              ]
+            })
           } else if (msgType === 'log') {
             addLog(payload.level || 'info', payload.message, payload.detail)
           } else if (msgType === 'pong') {
