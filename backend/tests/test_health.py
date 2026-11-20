@@ -1,0 +1,20 @@
+from fastapi.testclient import TestClient
+from app.main import app
+
+client = TestClient(app)
+
+
+def test_health_check():
+    response = client.get("/health")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["status"] == "ok"
+    assert "version" in data
+    assert "timestamp" in data
+
+
+def test_websocket_echo():
+    with client.websocket_connect("/ws") as websocket:
+        websocket.send_text("ping")
+        data = websocket.receive_text()
+        assert data == "echo: ping"
