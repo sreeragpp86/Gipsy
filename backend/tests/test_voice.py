@@ -54,3 +54,9 @@ def test_tts_queue_lifecycle():
         assert second is None
 
     asyncio.run(run())
+
+
+def test_kokoro_model_discovery():
+    engine = TextToSpeechEngine()
+    kokoro = engine._get_kokoro()
+    assert kokoro is not None
