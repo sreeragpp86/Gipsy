@@ -3,6 +3,7 @@ import type { AssistantState } from '../types/hud'
 
 interface VisualizerProps {
   state: AssistantState
+  audioAmplitude?: number
 }
 
 interface StateStyle {
@@ -73,10 +74,15 @@ function lerp(start: number, end: number, factor: number): number {
   return start + (end - start) * factor
 }
 
-export function Visualizer({ state }: VisualizerProps) {
+export function Visualizer({ state, audioAmplitude = 0 }: VisualizerProps) {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const currentRef = useRef<StateStyle>({ ...STATE_CONFIGS.IDLE })
   const phaseRef = useRef<number>(0)
+  const amplitudeRef = useRef<number>(audioAmplitude)
+
+  useEffect(() => {
+    amplitudeRef.current = audioAmplitude
+  }, [audioAmplitude])
 
   useEffect(() => {
     const canvas = canvasRef.current
@@ -104,10 +110,14 @@ export function Visualizer({ state }: VisualizerProps) {
       const current = currentRef.current
       const lerpSpeed = 0.08
 
+      const liveAmp = state === 'SPEAKING' && amplitudeRef.current > 0
+        ? Math.max(target.amplitude, amplitudeRef.current * 1.5)
+        : target.amplitude
+
       current.r = lerp(current.r, target.r, lerpSpeed)
       current.g = lerp(current.g, target.g, lerpSpeed)
       current.b = lerp(current.b, target.b, lerpSpeed)
-      current.amplitude = lerp(current.amplitude, target.amplitude, lerpSpeed)
+      current.amplitude = lerp(current.amplitude, liveAmp, lerpSpeed)
       current.frequency = lerp(current.frequency, target.frequency, lerpSpeed)
       current.speed = lerp(current.speed, target.speed, lerpSpeed)
       current.coreScale = lerp(current.coreScale, target.coreScale, lerpSpeed)

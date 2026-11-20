@@ -46,6 +46,7 @@ export function App() {
     isMicActive,
     isDrawerOpen,
     setIsDrawerOpen,
+    audioAmplitude,
     telemetry,
     dialogue,
     logs,
@@ -102,7 +103,7 @@ export function App() {
         />
 
         <div className="relative rounded-2xl border border-white/[0.06] bg-slate-900/40 p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_12px_32px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl">
-          <Visualizer state={assistantState} />
+          <Visualizer state={assistantState} audioAmplitude={audioAmplitude} />
 
           <div className="mt-2 text-center">
             <span className="font-mono text-[11px] uppercase tracking-wider text-slate-400">

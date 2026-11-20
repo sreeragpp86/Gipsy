@@ -8,6 +8,45 @@ from fastapi.middleware.cors import CORSMiddleware
 from app.llm import run_gipsy_pipeline
 from app.telemetry import get_system_telemetry
 from app.websocket_manager import manager
+from app.voice.audio_loop import AudioInputPipeline
+
+audio_pipeline = AudioInputPipeline()
+
+
+async def on_speech_captured(audio_data):
+    await manager.broadcast({
+        "type": "state_change",
+        "state": "PROCESSING",
+    })
+    await manager.broadcast({
+        "type": "log",
+        "level": "info",
+        "message": "Voice input detected, transcribing with Whisper...",
+        "timestamp": datetime.now(timezone.utc).isoformat(),
+    })
+
+    try:
+        text = await asyncio.to_thread(audio_pipeline.stt.transcribe, audio_data)
+    except Exception as e:
+        text = ""
+        await manager.broadcast({
+            "type": "log",
+            "level": "system",
+            "message": f"Whisper transcription error: {str(e)}",
+        })
+
+    if text.strip():
+        await manager.broadcast({
+            "type": "user_speech",
+            "text": text,
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        await run_gipsy_pipeline(text, manager)
+    else:
+        await manager.broadcast({
+            "type": "state_change",
+            "state": "IDLE",
+        })
 
 
 async def telemetry_loop():
@@ -81,6 +120,36 @@ async def websocket_endpoint(websocket: WebSocket):
             if msg_type == "text_command":
                 content = data.get("content", "")
                 asyncio.create_task(run_gipsy_pipeline(content, manager))
+            elif msg_type == "toggle_mic":
+                active = bool(data.get("active", False))
+                if active:
+                    await manager.broadcast({
+                        "type": "state_change",
+                        "state": "LISTENING",
+                    })
+                    await manager.broadcast({
+                        "type": "log",
+                        "level": "action",
+                        "message": "Microphone capture active, listening for speech...",
+                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                    })
+                    try:
+                        audio_pipeline.start_capture(on_speech_captured)
+                    except Exception as e:
+                        await manager.broadcast({
+                            "type": "log",
+                            "level": "system",
+                            "message": f"Microphone init note: {str(e)}",
+                        })
+                else:
+                    audio = audio_pipeline.stop_capture()
+                    if audio is not None and len(audio) > 0:
+                        asyncio.create_task(on_speech_captured(audio))
+                    else:
+                        await manager.broadcast({
+                            "type": "state_change",
+                            "state": "IDLE",
+                        })
             elif msg_type == "set_state":
                 state = data.get("state", "IDLE")
                 await manager.broadcast({

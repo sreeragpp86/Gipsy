@@ -6,10 +6,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 import httpx
 from tools.registry import OLLAMA_TOOLS, execute_tool
+from app.voice.tts import SentenceChunker, TextToSpeechEngine
 
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "system_prompt.txt"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+
+tts_engine = TextToSpeechEngine()
 
 
 def load_system_prompt() -> str:
@@ -153,10 +156,8 @@ async def run_gipsy_pipeline(content: str, manager):
                                 "content": json.dumps(tool_output),
                             })
 
-                        await manager.broadcast({
-                            "type": "state_change",
-                            "state": "SPEAKING",
-                        })
+                        tts_engine.start_worker(manager)
+                        chunker = SentenceChunker()
 
                         stream_req = await client.post(
                             f"{OLLAMA_BASE_URL}/api/chat",
@@ -180,8 +181,15 @@ async def run_gipsy_pipeline(content: str, manager):
                                         "type": "stream_chunk",
                                         "chunk": token,
                                     })
+                                    sentences = chunker.add_token(token)
+                                    for s in sentences:
+                                        await tts_engine.enqueue_sentence(s)
                             except Exception:
                                 pass
+
+                        remaining = chunker.flush()
+                        if remaining:
+                            await tts_engine.enqueue_sentence(remaining)
 
                         clean_reply = full_text.strip().replace("*", "")
                         await manager.broadcast({
@@ -190,29 +198,20 @@ async def run_gipsy_pipeline(content: str, manager):
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         })
 
-                        await asyncio.sleep(1.0)
-                        await manager.broadcast({
-                            "type": "state_change",
-                            "state": "IDLE",
-                        })
+                        await tts_engine.finish_stream()
                         return
 
                     else:
                         reply_text = msg.get("content", "").strip().replace("*", "")
                         await manager.broadcast({
-                            "type": "state_change",
-                            "state": "SPEAKING",
-                        })
-                        await manager.broadcast({
                             "type": "assistant_message",
                             "content": reply_text,
                             "timestamp": datetime.now(timezone.utc).isoformat(),
                         })
-                        await asyncio.sleep(1.0)
-                        await manager.broadcast({
-                            "type": "state_change",
-                            "state": "IDLE",
-                        })
+
+                        tts_engine.start_worker(manager)
+                        await tts_engine.enqueue_sentence(reply_text)
+                        await tts_engine.finish_stream()
                         return
         except Exception as e:
             await manager.broadcast({
@@ -252,10 +251,7 @@ async def run_gipsy_pipeline(content: str, manager):
             "status": "completed",
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
-        await manager.broadcast({
-            "type": "state_change",
-            "state": "SPEAKING",
-        })
+
         await manager.broadcast({
             "type": "assistant_message",
             "content": reply_text,
@@ -266,23 +262,17 @@ async def run_gipsy_pipeline(content: str, manager):
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
 
-        await asyncio.sleep(1.2)
-        await manager.broadcast({
-            "type": "state_change",
-            "state": "IDLE",
-        })
+        tts_engine.start_worker(manager)
+        await tts_engine.enqueue_sentence(reply_text)
+        await tts_engine.finish_stream()
     else:
-        await manager.broadcast({
-            "type": "state_change",
-            "state": "SPEAKING",
-        })
+        reply_text = f"Instruction recognized: {content}. Standing by for tactical directives."
         await manager.broadcast({
             "type": "assistant_message",
-            "content": f"Instruction recognized: {content}. Standing by for tactical directives.",
+            "content": reply_text,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
-        await asyncio.sleep(1.0)
-        await manager.broadcast({
-            "type": "state_change",
-            "state": "IDLE",
-        })
+
+        tts_engine.start_worker(manager)
+        await tts_engine.enqueue_sentence(reply_text)
+        await tts_engine.finish_stream()

@@ -6,6 +6,7 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
   const [assistantState, setAssistantState] = useState<AssistantState>('IDLE')
   const [isMicActive, setIsMicActive] = useState<boolean>(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false)
+  const [audioAmplitude, setAudioAmplitude] = useState<number>(0)
 
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     cpuUsage: 0,
@@ -93,7 +94,23 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
             setAssistantState(payload.state)
             if (payload.state === 'IDLE') {
               setIsMicActive(false)
+              setAudioAmplitude(0)
+            } else if (payload.state === 'LISTENING') {
+              setIsMicActive(true)
             }
+          } else if (msgType === 'audio_amplitude') {
+            setAudioAmplitude(payload.amplitude ?? 0)
+          } else if (msgType === 'user_speech') {
+            const timeString = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            setDialogue((prev) => [
+              ...prev,
+              {
+                id: `speech-${Date.now()}`,
+                sender: 'user',
+                text: payload.text,
+                timestamp: timeString,
+              },
+            ])
           } else if (msgType === 'tool_call') {
             setDialogue((prev) => {
               const last = prev[prev.length - 1]
@@ -256,15 +273,18 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
   }, [])
 
   const toggleMic = useCallback(() => {
-    if (isMicActive) {
-      setIsMicActive(false)
-      sendCommand('Toggle terminal fullscreen and set volume to 75%')
-    } else {
-      setIsMicActive(true)
-      setOverrideState('LISTENING')
-      addLog('action', 'Microphone active, listening for speech stream')
+    const nextState = !isMicActive
+    setIsMicActive(nextState)
+
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: 'toggle_mic',
+          active: nextState,
+        })
+      )
     }
-  }, [isMicActive, sendCommand, setOverrideState, addLog])
+  }, [isMicActive])
 
   const clearLogs = useCallback(() => {
     setLogs([])
@@ -276,6 +296,7 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
     isMicActive,
     isDrawerOpen,
     setIsDrawerOpen,
+    audioAmplitude,
     telemetry,
     dialogue,
     logs,
