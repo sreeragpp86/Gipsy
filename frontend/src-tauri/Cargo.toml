@@ -26,3 +26,4 @@ tauri-plugin-log = "2"
 window-vibrancy = "0.8.1"
 tauri-plugin-global-shortcut = "2"
 tauri-plugin-autostart = "2"
+uuid = { version = "1.29.3", features = ["v4", "fast-rng"] }

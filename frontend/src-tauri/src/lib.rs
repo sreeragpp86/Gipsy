@@ -56,6 +56,11 @@ fn stop_backend(manager: State<'_, Arc<BackendManager>>) -> Result<(), String> {
     Ok(())
 }
 
+#[tauri::command]
+fn get_auth_token(manager: State<'_, Arc<BackendManager>>) -> String {
+    manager.get_token()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let backend_manager = Arc::new(BackendManager::new());
@@ -157,7 +162,8 @@ pub fn run() {
             set_click_through,
             get_backend_status,
             start_backend,
-            stop_backend
+            stop_backend,
+            get_auth_token
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

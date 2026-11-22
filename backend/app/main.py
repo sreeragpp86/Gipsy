@@ -1,5 +1,7 @@
 import asyncio
+import hmac
 import json
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
@@ -9,6 +11,14 @@ from app.llm import run_gipsy_pipeline
 from app.telemetry import get_system_telemetry
 from app.websocket_manager import manager
 from app.voice.audio_loop import AudioInputPipeline
+
+ALLOWED_WS_ORIGINS = {
+    "http://localhost:5173",
+    "http://127.0.0.1:5173",
+    "tauri://localhost",
+    "http://tauri.localhost",
+    "https://tauri.localhost",
+}
 
 audio_pipeline = AudioInputPipeline()
 
@@ -98,6 +108,18 @@ async def health_check():
 
 @app.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
+    origin = websocket.headers.get("origin")
+    if origin and origin not in ALLOWED_WS_ORIGINS:
+        await websocket.close(code=4003, reason="Forbidden: untrusted origin")
+        return
+
+    expected_token = os.getenv("GIPSY_AUTH_TOKEN")
+    if expected_token:
+        client_token = websocket.query_params.get("token") or websocket.headers.get("x-auth-token")
+        if not client_token or not hmac.compare_digest(client_token, expected_token):
+            await websocket.close(code=4001, reason="Unauthorized: invalid or missing auth token")
+            return
+
     await manager.connect(websocket)
     try:
         initial_telemetry = get_system_telemetry()

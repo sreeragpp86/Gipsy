@@ -1,4 +1,5 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { AssistantState, DialogueItem, LogEntry, TelemetryData } from '../types/hud'
 
 export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
@@ -44,13 +45,26 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
     setLogs((prev) => [entry, ...prev.slice(0, 49)])
   }, [])
 
-  const connect = useCallback(() => {
+  const connect = useCallback(async () => {
     if (isUnmountedRef.current) return
 
     setStatus('connecting')
 
+    let finalUrl = url
+    if (isTauri()) {
+      try {
+        const token = await invoke<string>('get_auth_token')
+        if (token) {
+          const sep = finalUrl.includes('?') ? '&' : '?'
+          finalUrl = `${finalUrl}${sep}token=${encodeURIComponent(token)}`
+        }
+      } catch {
+        // Fallback for non-Tauri dev mode
+      }
+    }
+
     try {
-      const ws = new WebSocket(url)
+      const ws = new WebSocket(finalUrl)
       socketRef.current = ws
 
       ws.onopen = () => {

@@ -14,13 +14,19 @@ pub struct BackendStatus {
 
 pub struct BackendManager {
     child: Mutex<Option<Child>>,
+    auth_token: String,
 }
 
 impl BackendManager {
     pub fn new() -> Self {
         Self {
             child: Mutex::new(None),
+            auth_token: uuid::Uuid::new_v4().to_string(),
         }
+    }
+
+    pub fn get_token(&self) -> String {
+        self.auth_token.clone()
     }
 
     pub fn is_port_open() -> bool {
@@ -68,6 +74,7 @@ impl BackendManager {
 
         let mut cmd = Command::new(&python_bin);
         cmd.args(["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"])
+            .env("GIPSY_AUTH_TOKEN", &self.auth_token)
             .current_dir(&backend_root);
 
         let child = cmd
