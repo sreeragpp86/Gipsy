@@ -1,7 +1,10 @@
 mod backend;
 
 use std::sync::Arc;
+use tauri::menu::{Menu, MenuItem};
+use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, LogicalSize, Manager, State};
+use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use backend::{BackendManager, BackendStatus};
 
 #[cfg(target_os = "macos")]
@@ -80,6 +83,62 @@ pub fn run() {
                     );
                 }
             }
+
+            let shortcut = Shortcut::new(Some(Modifiers::ALT), Code::Space);
+            let shortcut_match = shortcut.clone();
+            app.handle().plugin(
+                tauri_plugin_global_shortcut::Builder::new()
+                    .with_handler(move |app, s, event| {
+                        if s == &shortcut_match && event.state() == ShortcutState::Pressed {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let is_visible = window.is_visible().unwrap_or(false);
+                                if is_visible {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                    })
+                    .build(),
+            )?;
+            let _ = app.global_shortcut().register(shortcut);
+
+            let status_i = MenuItem::with_id(app, "status", "Gipsy • Standby", false, None::<&str>)?;
+            let toggle_i = MenuItem::with_id(app, "toggle", "Toggle HUD (⌥ + Space)", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit Gipsy", true, None::<&str>)?;
+
+            let tray_menu = Menu::with_items(app, &[&status_i, &toggle_i, &quit_i])?;
+
+            let mut tray_builder = TrayIconBuilder::new()
+                .menu(&tray_menu)
+                .show_menu_on_left_click(true)
+                .on_menu_event(|app, event| {
+                    match event.id.as_ref() {
+                        "quit" => {
+                            app.exit(0);
+                        }
+                        "toggle" => {
+                            if let Some(window) = app.get_webview_window("main") {
+                                let is_visible = window.is_visible().unwrap_or(false);
+                                if is_visible {
+                                    let _ = window.hide();
+                                } else {
+                                    let _ = window.show();
+                                    let _ = window.set_focus();
+                                }
+                            }
+                        }
+                        _ => {}
+                    }
+                });
+
+            if let Some(icon) = app.default_window_icon() {
+                tray_builder = tray_builder.icon(icon.clone());
+            }
+
+            let _ = tray_builder.build(app)?;
 
             let _ = backend_setup.spawn_if_needed();
 
