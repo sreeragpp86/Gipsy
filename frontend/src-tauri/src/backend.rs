@@ -38,6 +38,38 @@ impl BackendManager {
     }
 
     fn find_backend_root() -> Option<PathBuf> {
+        if let Ok(custom_dir) = std::env::var("GIPSY_BACKEND_DIR") {
+            let path = PathBuf::from(custom_dir);
+            if path.join(".venv/bin/python").is_file() && path.join("app/main.py").is_file() {
+                if let Ok(canon) = path.canonicalize() {
+                    return Some(canon);
+                }
+            }
+        }
+
+        if let Ok(exe_path) = std::env::current_exe() {
+            let mut cur = exe_path.parent();
+            for _ in 0..6 {
+                if let Some(parent) = cur {
+                    let candidate = parent.join("backend");
+                    if candidate.join(".venv/bin/python").is_file() && candidate.join("app/main.py").is_file() {
+                        if let Ok(canon) = candidate.canonicalize() {
+                            return Some(canon);
+                        }
+                    }
+                    let bundle_resources = parent.join("Resources/backend");
+                    if bundle_resources.join(".venv/bin/python").is_file() && bundle_resources.join("app/main.py").is_file() {
+                        if let Ok(canon) = bundle_resources.canonicalize() {
+                            return Some(canon);
+                        }
+                    }
+                    cur = parent.parent();
+                } else {
+                    break;
+                }
+            }
+        }
+
         let candidates = [
             PathBuf::from("../../backend"),
             PathBuf::from("../backend"),
@@ -48,7 +80,7 @@ impl BackendManager {
         for candidate in &candidates {
             let py_path = candidate.join(".venv/bin/python");
             let app_path = candidate.join("app/main.py");
-            if py_path.exists() && app_path.exists() {
+            if py_path.is_file() && app_path.is_file() {
                 if let Ok(canon) = candidate.canonicalize() {
                     return Some(canon);
                 }
@@ -75,6 +107,11 @@ impl BackendManager {
         let mut cmd = Command::new(&python_bin);
         cmd.args(["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"])
             .env("GIPSY_AUTH_TOKEN", &self.auth_token)
+            .env_remove("PYTHONPATH")
+            .env_remove("PYTHONHOME")
+            .env_remove("DYLD_LIBRARY_PATH")
+            .env_remove("DYLD_INSERT_LIBRARIES")
+            .env_remove("LD_PRELOAD")
             .current_dir(&backend_root);
 
         let child = cmd

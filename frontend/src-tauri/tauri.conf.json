@@ -27,7 +27,7 @@
       }
     ],
     "security": {
-      "csp": null
+      "csp": "default-src 'self' tauri:; script-src 'self' 'unsafe-eval' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; font-src 'self' data:; img-src 'self' data: blob: tauri:; connect-src 'self' ipc: tauri: ws://localhost:8000 ws://127.0.0.1:8000 http://localhost:8000 http://127.0.0.1:8000 ws://localhost:5173 http://localhost:5173; frame-ancestors 'none'; object-src 'none';"
     }
   },
   "bundle": {

@@ -135,6 +135,11 @@ def test_websocket_admin_auth_submission(monkeypatch):
 
 def test_audio_loop_watchdog_limits():
     with patch("app.voice.audio_loop.SpeechToTextEngine"):
-        pipeline = AudioInputPipeline(sample_rate=16000, block_size=1600, max_duration_sec=15.0)
+        pipeline = AudioInputPipeline(sample_rate=16000, block_size=1600, max_duration_sec=15.0, max_buffer_bytes=1024 * 1024)
         assert pipeline.max_duration_sec == 15.0
         assert pipeline.max_chunks == 150
+        assert pipeline.max_buffer_bytes == 1024 * 1024
+
+        pipeline.recorded_chunks = [1, 2, 3]
+        pipeline.reset_buffer()
+        assert pipeline.recorded_chunks == []

@@ -7,11 +7,18 @@ from app.voice.stt import SpeechToTextEngine
 
 
 class AudioInputPipeline:
-    def __init__(self, sample_rate: int = 16000, block_size: int = 1024, max_duration_sec: float = 15.0):
+    def __init__(
+        self,
+        sample_rate: int = 16000,
+        block_size: int = 1024,
+        max_duration_sec: float = 15.0,
+        max_buffer_bytes: int = 4 * 1024 * 1024,
+    ):
         self.sample_rate = sample_rate
         self.block_size = block_size
         self.max_duration_sec = max_duration_sec
         self.max_chunks = max(1, int(self.sample_rate * self.max_duration_sec / self.block_size))
+        self.max_buffer_bytes = max_buffer_bytes
         self.vad = VoiceActivityDetector(sample_rate=sample_rate)
         self.wake_detector = WakeWordDetector()
         self.stt = SpeechToTextEngine()
@@ -20,6 +27,9 @@ class AudioInputPipeline:
         self.recorded_chunks: list[np.ndarray] = []
         self._stream: sd.InputStream | None = None
         self._loop = None
+
+    def reset_buffer(self):
+        self.recorded_chunks = []
 
     def start_capture(self, on_speech_completed):
         self._loop = asyncio.get_running_loop()
@@ -34,8 +44,13 @@ class AudioInputPipeline:
             chunk = indata[:, 0].copy()
             self.recorded_chunks.append(chunk)
 
+            current_bytes = len(self.recorded_chunks) * self.block_size * 4
             is_voice, event = self.vad.process_chunk(chunk)
-            if event == "SPEECH_END" or len(self.recorded_chunks) >= self.max_chunks:
+            if (
+                event == "SPEECH_END"
+                or len(self.recorded_chunks) >= self.max_chunks
+                or current_bytes >= self.max_buffer_bytes
+            ):
                 self.is_recording = False
                 combined = np.concatenate(self.recorded_chunks)
                 self.recorded_chunks = []
