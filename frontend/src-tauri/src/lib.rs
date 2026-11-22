@@ -1,4 +1,8 @@
-use tauri::{AppHandle, LogicalSize, Manager};
+mod backend;
+
+use std::sync::Arc;
+use tauri::{AppHandle, LogicalSize, Manager, State};
+use backend::{BackendManager, BackendStatus};
 
 #[cfg(target_os = "macos")]
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
@@ -32,10 +36,31 @@ fn set_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
     }
 }
 
+#[tauri::command]
+fn get_backend_status(manager: State<'_, Arc<BackendManager>>) -> BackendStatus {
+    manager.get_status()
+}
+
+#[tauri::command]
+fn start_backend(manager: State<'_, Arc<BackendManager>>) -> Result<BackendStatus, String> {
+    manager.spawn_if_needed()
+}
+
+#[tauri::command]
+fn stop_backend(manager: State<'_, Arc<BackendManager>>) -> Result<(), String> {
+    manager.stop();
+    Ok(())
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
+    let backend_manager = Arc::new(BackendManager::new());
+    let backend_setup = backend_manager.clone();
+    let backend_exit = backend_manager.clone();
+
     tauri::Builder::default()
-        .setup(|app| {
+        .manage(backend_manager)
+        .setup(move |app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -56,9 +81,22 @@ pub fn run() {
                 }
             }
 
+            let _ = backend_setup.spawn_if_needed();
+
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![set_hud_mode, set_click_through])
-        .run(tauri::generate_context!())
-        .expect("error while building tauri application");
+        .invoke_handler(tauri::generate_handler![
+            set_hud_mode,
+            set_click_through,
+            get_backend_status,
+            start_backend,
+            stop_backend
+        ])
+        .build(tauri::generate_context!())
+        .expect("error while building tauri application")
+        .run(move |_app_handle, event| {
+            if let tauri::RunEvent::Exit = event {
+                backend_exit.stop();
+            }
+        });
 }
