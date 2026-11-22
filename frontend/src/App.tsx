@@ -1,9 +1,13 @@
+import { useEffect, useState } from 'react'
+import { Minimize2, Pin, PinOff } from 'lucide-react'
 import { Visualizer } from './components/Visualizer'
 import { TelemetryStrip } from './components/TelemetryStrip'
 import { TranscriptArea } from './components/TranscriptArea'
 import { CommandBar } from './components/CommandBar'
 import { ExecutionDrawer } from './components/ExecutionDrawer'
+import { PillView } from './components/PillView'
 import { useGipsySocket } from './hooks/useGipsySocket'
+import { useTauriWindow } from './hooks/useTauriWindow'
 import type { AssistantState } from './types/hud'
 
 const STATE_BADGES: Record<AssistantState, { label: string; dot: string; text: string; border: string }> = {
@@ -56,14 +60,43 @@ export function App() {
     clearLogs,
   } = useGipsySocket()
 
+  const { hudMode, setHudMode } = useTauriWindow()
+  const [isPinned, setIsPinned] = useState(false)
+
+  useEffect(() => {
+    if (assistantState !== 'IDLE') {
+      setHudMode('expanded')
+    } else if (!isPinned && hudMode === 'expanded') {
+      const timer = setTimeout(() => {
+        setHudMode('pill')
+      }, 5000)
+      return () => clearTimeout(timer)
+    }
+  }, [assistantState, isPinned, hudMode, setHudMode])
+
   const currentBadge = STATE_BADGES[assistantState]
+
+  if (hudMode === 'pill') {
+    return (
+      <div className="flex h-screen w-screen items-center justify-center bg-transparent p-0">
+        <PillView
+          state={assistantState}
+          audioAmplitude={audioAmplitude}
+          isMicActive={isMicActive}
+          connectionStatus={status}
+          onToggleMic={toggleMic}
+          onExpand={() => setHudMode('expanded')}
+        />
+      </div>
+    )
+  }
 
   return (
     <div className="relative flex min-h-screen flex-col items-center justify-between bg-[#0b0e14]/80 backdrop-blur-2xl px-4 py-6 text-slate-100 selection:bg-cyan-500 selection:text-black">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(56,189,248,0.06),rgba(0,0,0,0))]" />
 
       <main className="relative z-10 flex w-full max-w-3xl flex-col gap-4">
-        <header className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <header data-tauri-drag-region className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between select-none">
           <div className="flex items-center gap-3">
             <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-slate-900/80 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
               <span className="font-mono text-sm font-bold tracking-tight text-cyan-400">G</span>
@@ -87,11 +120,35 @@ export function App() {
             </div>
           </div>
 
-          <div
-            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] transition-colors duration-200 ${currentBadge.border}`}
-          >
-            <span className={`h-2 w-2 rounded-full ${currentBadge.dot}`} />
-            <span className={`font-medium ${currentBadge.text}`}>{currentBadge.label}</span>
+          <div className="flex items-center gap-2">
+            <div
+              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] transition-colors duration-200 ${currentBadge.border}`}
+            >
+              <span className={`h-2 w-2 rounded-full ${currentBadge.dot}`} />
+              <span className={`font-medium ${currentBadge.text}`}>{currentBadge.label}</span>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => setIsPinned(!isPinned)}
+              className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${
+                isPinned
+                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
+                  : 'border-white/[0.06] bg-slate-900/60 text-slate-400 hover:text-slate-200'
+              }`}
+              title={isPinned ? 'Unpin (auto-collapses when idle)' : 'Pin (keep expanded)'}
+            >
+              {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => setHudMode('pill')}
+              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-slate-900/60 text-slate-400 transition-colors hover:text-slate-200"
+              title="Minimize to Notch Pill"
+            >
+              <Minimize2 size={13} />
+            </button>
           </div>
         </header>
 
