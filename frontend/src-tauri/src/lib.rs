@@ -4,6 +4,7 @@ use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, LogicalSize, Manager, State};
+use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 use backend::{BackendManager, BackendStatus};
 
@@ -104,6 +105,13 @@ pub fn run() {
                     .build(),
             )?;
             let _ = app.global_shortcut().register(shortcut);
+
+            app.handle().plugin(
+                tauri_plugin_autostart::init(
+                    MacosLauncher::LaunchAgent,
+                    Some(vec!["--autostart"]),
+                )
+            )?;
 
             let status_i = MenuItem::with_id(app, "status", "Gipsy • Standby", false, None::<&str>)?;
             let toggle_i = MenuItem::with_id(app, "toggle", "Toggle HUD (⌥ + Space)", true, None::<&str>)?;
