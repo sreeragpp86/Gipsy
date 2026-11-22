@@ -19,6 +19,10 @@ models/
 *.onnx
 *.bin
 
+# Rust
+target/
+src-tauri/target/
+
 # Environment
 .env
 .env.local
