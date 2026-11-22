@@ -220,7 +220,7 @@ export function Visualizer({ state, audioAmplitude = 0 }: VisualizerProps) {
   }, [state])
 
   return (
-    <div className="relative flex h-64 w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-950/40">
+    <div className="relative flex h-48 w-full items-center justify-center overflow-hidden rounded-2xl bg-slate-950/40">
       <canvas
         ref={canvasRef}
         className="h-full w-full max-w-md touch-none"

@@ -20,7 +20,7 @@ fn set_hud_mode(app: AppHandle, mode: String) -> Result<(), String> {
                 let _ = window.set_resizable(false);
             }
             "expanded" => {
-                window.set_size(LogicalSize::new(780.0, 520.0)).map_err(|e| e.to_string())?;
+                window.set_size(LogicalSize::new(780.0, 660.0)).map_err(|e| e.to_string())?;
                 let _ = window.set_resizable(true);
             }
             _ => return Err(format!("Unknown HUD mode: {}", mode)),

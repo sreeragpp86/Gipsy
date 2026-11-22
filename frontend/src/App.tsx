@@ -1,5 +1,7 @@
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Minimize2, Pin, PinOff } from 'lucide-react'
+import { isTauri } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Visualizer } from './components/Visualizer'
 import { TelemetryStrip } from './components/TelemetryStrip'
 import { TranscriptArea } from './components/TranscriptArea'
@@ -67,6 +69,12 @@ export function App() {
   const { hudMode, setHudMode } = useTauriWindow()
   const [isPinned, setIsPinned] = useState(false)
 
+  const handleDrag = useCallback((e: React.MouseEvent) => {
+    if (!isTauri()) return
+    if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
+    getCurrentWindow().startDragging()
+  }, [])
+
   useEffect(() => {
     if (adminChallenge || assistantState !== 'IDLE') {
       setHudMode('expanded')
@@ -82,7 +90,11 @@ export function App() {
 
   if (hudMode === 'pill') {
     return (
-      <div className="flex h-screen w-screen items-center justify-center bg-transparent p-0">
+      <div
+        data-tauri-drag-region
+        onMouseDown={handleDrag}
+        className="flex h-screen w-screen items-center justify-center bg-transparent p-0 select-none cursor-grab active:cursor-grabbing"
+      >
         <PillView
           state={assistantState}
           audioAmplitude={audioAmplitude}
@@ -96,66 +108,70 @@ export function App() {
   }
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-between bg-[#0b0e14]/80 backdrop-blur-2xl px-4 py-6 text-slate-100 selection:bg-cyan-500 selection:text-black">
+    <div className="relative flex h-screen w-screen flex-col justify-between overflow-hidden bg-[#0b0e14]/85 backdrop-blur-2xl p-4 text-slate-100 selection:bg-cyan-500 selection:text-black">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(56,189,248,0.06),rgba(0,0,0,0))]" />
 
-      <main className="relative z-10 flex w-full max-w-3xl flex-col gap-4">
-        <header data-tauri-drag-region className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between select-none">
-          <div className="flex items-center gap-3">
-            <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-slate-900/80 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
-              <span className="font-mono text-sm font-bold tracking-tight text-cyan-400">G</span>
+      <header
+        data-tauri-drag-region
+        onMouseDown={handleDrag}
+        className="relative z-20 mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between select-none cursor-grab active:cursor-grabbing shrink-0"
+      >
+        <div className="flex items-center gap-3">
+          <div className="flex h-9 w-9 items-center justify-center rounded-xl border border-white/[0.08] bg-slate-900/80 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.08)]">
+            <span className="font-mono text-sm font-bold tracking-tight text-cyan-400">G</span>
+          </div>
+          <div>
+            <div className="flex items-center gap-2">
+              <h1 className="text-sm font-semibold tracking-tight text-white">Gipsy</h1>
+              <span className="font-mono text-[10px] text-slate-500">v0.1.0</span>
+              <span
+                className={`inline-block h-1.5 w-1.5 rounded-full ${
+                  status === 'connected'
+                    ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
+                    : status === 'connecting'
+                    ? 'bg-amber-400 animate-pulse'
+                    : 'bg-rose-500'
+                }`}
+                title={`WebSocket ${status}`}
+              />
             </div>
-            <div>
-              <div className="flex items-center gap-2">
-                <h1 className="text-sm font-semibold tracking-tight text-white">Gipsy</h1>
-                <span className="font-mono text-[10px] text-slate-500">v0.1.0</span>
-                <span
-                  className={`inline-block h-1.5 w-1.5 rounded-full ${
-                    status === 'connected'
-                      ? 'bg-emerald-400 shadow-[0_0_6px_#34d399]'
-                      : status === 'connecting'
-                      ? 'bg-amber-400 animate-pulse'
-                      : 'bg-rose-500'
-                  }`}
-                  title={`WebSocket ${status}`}
-                />
-              </div>
-              <p className="text-[11px] text-slate-400">Local Voice & OS Control Surface</p>
-            </div>
+            <p className="text-[11px] text-slate-400">Local Voice & OS Control Surface</p>
+          </div>
+        </div>
+
+        <div className="flex items-center gap-2">
+          <div
+            className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] transition-colors duration-200 ${currentBadge.border}`}
+          >
+            <span className={`h-2 w-2 rounded-full ${currentBadge.dot}`} />
+            <span className={`font-medium ${currentBadge.text}`}>{currentBadge.label}</span>
           </div>
 
-          <div className="flex items-center gap-2">
-            <div
-              className={`inline-flex items-center gap-2 rounded-full border px-3 py-1 font-mono text-[11px] transition-colors duration-200 ${currentBadge.border}`}
-            >
-              <span className={`h-2 w-2 rounded-full ${currentBadge.dot}`} />
-              <span className={`font-medium ${currentBadge.text}`}>{currentBadge.label}</span>
-            </div>
+          <button
+            type="button"
+            onClick={() => setIsPinned(!isPinned)}
+            className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${
+              isPinned
+                ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
+                : 'border-white/[0.06] bg-slate-900/60 text-slate-400 hover:text-slate-200'
+            }`}
+            title={isPinned ? 'Unpin (auto-collapses when idle)' : 'Pin (keep expanded)'}
+          >
+            {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
+          </button>
 
-            <button
-              type="button"
-              onClick={() => setIsPinned(!isPinned)}
-              className={`flex h-7 w-7 items-center justify-center rounded-lg border transition-colors ${
-                isPinned
-                  ? 'border-cyan-500/40 bg-cyan-500/10 text-cyan-300'
-                  : 'border-white/[0.06] bg-slate-900/60 text-slate-400 hover:text-slate-200'
-              }`}
-              title={isPinned ? 'Unpin (auto-collapses when idle)' : 'Pin (keep expanded)'}
-            >
-              {isPinned ? <PinOff size={13} /> : <Pin size={13} />}
-            </button>
+          <button
+            type="button"
+            onClick={() => setHudMode('pill')}
+            className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-slate-900/60 text-slate-400 transition-colors hover:text-slate-200"
+            title="Minimize to Notch Pill"
+          >
+            <Minimize2 size={13} />
+          </button>
+        </div>
+      </header>
 
-            <button
-              type="button"
-              onClick={() => setHudMode('pill')}
-              className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-slate-900/60 text-slate-400 transition-colors hover:text-slate-200"
-              title="Minimize to Notch Pill"
-            >
-              <Minimize2 size={13} />
-            </button>
-          </div>
-        </header>
-
+      <div className="relative z-10 flex flex-1 flex-col gap-3 overflow-y-auto overflow-x-hidden pr-1 pb-1">
         <TelemetryStrip
           telemetry={telemetry}
           onToggleDrawer={() => setIsDrawerOpen(!isDrawerOpen)}
@@ -163,7 +179,7 @@ export function App() {
           logCount={logs.length}
         />
 
-        <div className="relative rounded-2xl border border-white/[0.06] bg-slate-900/40 p-3 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_12px_32px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl">
+        <div className="relative rounded-2xl border border-white/[0.06] bg-slate-900/40 p-2.5 shadow-[inset_0_1px_0_0_rgba(255,255,255,0.04),0_12px_32px_-8px_rgba(0,0,0,0.6)] backdrop-blur-xl">
           <Visualizer state={assistantState} audioAmplitude={audioAmplitude} />
 
           <div className="mt-2 text-center">
@@ -175,6 +191,15 @@ export function App() {
 
         <TranscriptArea dialogue={dialogue} />
 
+        <ExecutionDrawer
+          isOpen={isDrawerOpen}
+          logs={logs}
+          onClose={() => setIsDrawerOpen(false)}
+          onClear={clearLogs}
+        />
+      </div>
+
+      <div className="relative z-20 mt-2.5 shrink-0">
         <CommandBar
           state={assistantState}
           isMicActive={isMicActive}
@@ -182,14 +207,7 @@ export function App() {
           onSubmitCommand={sendCommand}
           onSelectState={setOverrideState}
         />
-
-        <ExecutionDrawer
-          isOpen={isDrawerOpen}
-          logs={logs}
-          onClose={() => setIsDrawerOpen(false)}
-          onClear={clearLogs}
-        />
-      </main>
+      </div>
 
       {adminChallenge && (
         <AdminAuthModal
@@ -199,7 +217,7 @@ export function App() {
         />
       )}
 
-      <footer className="relative z-10 mt-6 flex items-center justify-between text-[11px] text-slate-400">
+      <footer className="relative z-10 mt-2 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
         <span className="font-mono">Decoupled Architecture • React + Tailwind CSS v4</span>
         <span className="font-mono">ws://127.0.0.1:8000/ws</span>
       </footer>

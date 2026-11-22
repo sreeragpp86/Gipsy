@@ -1,4 +1,6 @@
-import { Maximize2, Mic, MicOff } from 'lucide-react'
+import { GripVertical, Maximize2, Mic, MicOff } from 'lucide-react'
+import { isTauri } from '@tauri-apps/api/core'
+import { getCurrentWindow } from '@tauri-apps/api/window'
 import type { AssistantState } from '../types/hud'
 
 interface PillViewProps {
@@ -28,12 +30,20 @@ export function PillView({
 }: PillViewProps) {
   const current = STATE_DOTS[state]
 
+  const handleDrag = (e: React.MouseEvent) => {
+    if (!isTauri()) return
+    if ((e.target as HTMLElement).closest('button, input, textarea')) return
+    getCurrentWindow().startDragging()
+  }
+
   return (
     <div
       data-tauri-drag-region
-      className="flex h-14 w-full max-w-[280px] select-none items-center justify-between rounded-full border border-white/[0.08] bg-[#0b0e14]/90 px-3.5 shadow-[0_8px_32px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-2xl transition-all duration-300"
+      onMouseDown={handleDrag}
+      className="flex h-14 w-full max-w-[280px] select-none items-center justify-between rounded-full border border-white/[0.08] bg-[#0b0e14]/90 px-3 shadow-[0_8px_32px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-2xl transition-all duration-300 cursor-grab active:cursor-grabbing"
     >
-      <div className="flex items-center gap-2.5">
+      <div className="flex items-center gap-2">
+        <GripVertical size={13} className="text-slate-600 shrink-0" />
         <div className="relative flex h-7 w-7 items-center justify-center rounded-full bg-slate-900/90 border border-white/[0.08]">
           <span className={`h-2 w-2 rounded-full transition-colors duration-300 ${current.dot}`} />
           {connectionStatus === 'connected' && (
