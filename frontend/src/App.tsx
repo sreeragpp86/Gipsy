@@ -59,7 +59,7 @@ export function App() {
   const currentBadge = STATE_BADGES[assistantState]
 
   return (
-    <div className="relative flex min-h-screen flex-col items-center justify-between bg-[#0b0e14] px-4 py-6 text-slate-100 selection:bg-cyan-500 selection:text-black">
+    <div className="relative flex min-h-screen flex-col items-center justify-between bg-[#0b0e14]/80 backdrop-blur-2xl px-4 py-6 text-slate-100 selection:bg-cyan-500 selection:text-black">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(56,189,248,0.06),rgba(0,0,0,0))]" />
 
       <main className="relative z-10 flex w-full max-w-3xl flex-col gap-4">
