@@ -33,3 +33,11 @@ export interface DialogueItem {
     status: 'running' | 'completed'
   }
 }
+
+export interface AdminAuthChallenge {
+  challenge_id: string
+  tool_name: string
+  arguments: Record<string, unknown>
+  prompt: string
+  expires_in: number
+}

@@ -1,6 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import type { AssistantState, DialogueItem, LogEntry, TelemetryData } from '../types/hud'
+import type { AdminAuthChallenge, AssistantState, DialogueItem, LogEntry, TelemetryData } from '../types/hud'
 
 export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
@@ -8,6 +8,7 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
   const [isMicActive, setIsMicActive] = useState<boolean>(false)
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false)
   const [audioAmplitude, setAudioAmplitude] = useState<number>(0)
+  const [adminChallenge, setAdminChallenge] = useState<AdminAuthChallenge | null>(null)
 
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     cpuUsage: 0,
@@ -193,6 +194,18 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
             })
           } else if (msgType === 'log') {
             addLog(payload.level || 'info', payload.message, payload.detail)
+          } else if (msgType === 'admin_auth_required') {
+            setAdminChallenge({
+              challenge_id: payload.challenge_id,
+              tool_name: payload.tool_name,
+              arguments: payload.arguments || {},
+              prompt: payload.prompt,
+              expires_in: payload.expires_in || 30,
+            })
+            addLog('system', 'Admin Authorization Required', `${payload.tool_name}`)
+          } else if (msgType === 'admin_auth_result') {
+            setAdminChallenge(null)
+            addLog(payload.success ? 'action' : 'system', payload.message || 'Authorization result')
           } else if (msgType === 'pong') {
             const delta = Date.now() - pingTimestampRef.current
             setTelemetry((prev) => ({ ...prev, pingMs: delta }))
@@ -304,6 +317,30 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
     setLogs([])
   }, [])
 
+  const submitAdminAuth = useCallback((challenge_id: string, password: string) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: 'admin_auth_submit',
+          challenge_id,
+          password,
+        })
+      )
+    }
+  }, [])
+
+  const cancelAdminAuth = useCallback((challenge_id: string) => {
+    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+      socketRef.current.send(
+        JSON.stringify({
+          type: 'admin_auth_cancel',
+          challenge_id,
+        })
+      )
+    }
+    setAdminChallenge(null)
+  }, [])
+
   return {
     status,
     assistantState,
@@ -311,6 +348,7 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
     isDrawerOpen,
     setIsDrawerOpen,
     audioAmplitude,
+    adminChallenge,
     telemetry,
     dialogue,
     logs,
@@ -318,5 +356,7 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
     setOverrideState,
     toggleMic,
     clearLogs,
+    submitAdminAuth,
+    cancelAdminAuth,
   }
 }

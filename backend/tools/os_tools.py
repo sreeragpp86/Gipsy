@@ -21,6 +21,9 @@ APP_ALIASES = {
 
 def open_application(app_name: str) -> dict:
     clean_name = app_name.strip()
+    if not clean_name or clean_name.startswith("-") or "/" in clean_name or "\\" in clean_name or ".." in clean_name:
+        return {"success": False, "error": "Invalid application name or prohibited flag injection detected."}
+
     resolved_name = APP_ALIASES.get(clean_name.lower(), clean_name)
     current_os = platform.system()
 
@@ -95,6 +98,9 @@ def run_quick_action(action: str, target: str = "") -> dict:
 
             if act in ("open_url", "browse", "url") and target:
                 clean_url = target if target.startswith(("http://", "https://")) else f"https://{target}"
+                from app.security import is_safe_external_url
+                if not is_safe_external_url(clean_url):
+                    return {"success": False, "error": f"Target '{target}' is restricted. Navigation to internal or private IP hosts is blocked."}
                 subprocess.run(["open", clean_url], check=True)
                 return {"success": True, "action": act, "message": f"Navigating to {clean_url}."}
 

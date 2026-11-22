@@ -46,6 +46,9 @@ def execute_fallback_intent(content: str) -> tuple[str, dict, str] | None:
     open_match = re.search(r"(?:open|launch)\s+([a-zA-Z0-9\s]+)", text)
     if open_match:
         app_name = open_match.group(1).strip()
+        from app.security import is_admin_operation
+        if is_admin_operation("open_application", {"app_name": app_name}):
+            return ("open_application", {"app_name": app_name}, f"Launching {app_name} is an admin-level action and requires authentication on your HUD.")
         result = execute_tool("open_application", {"app_name": app_name})
         msg = f"Opening {app_name}. Ready on your display." if result.get("success") else f"Unable to locate application {app_name}."
         return ("open_application", {"app_name": app_name}, msg)
@@ -140,6 +143,55 @@ async def run_gipsy_pipeline(content: str, manager):
                                 "detail": display_name,
                                 "timestamp": datetime.now(timezone.utc).isoformat(),
                             })
+
+                            from app.security import is_admin_operation, admin_auth_manager
+                            if is_admin_operation(tool_name, tool_args):
+                                challenge_id, auth_future = admin_auth_manager.create_challenge(tool_name, tool_args)
+                                await manager.broadcast({
+                                    "type": "admin_auth_required",
+                                    "challenge_id": challenge_id,
+                                    "tool_name": tool_name,
+                                    "arguments": tool_args,
+                                    "prompt": f"Manual authentication required for '{tool_name}'. Please authorize on HUD.",
+                                    "expires_in": 30,
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+                                await manager.broadcast({
+                                    "type": "log",
+                                    "level": "system",
+                                    "message": f"Security Gate: Operation '{tool_name}' requires manual admin authorization.",
+                                    "timestamp": datetime.now(timezone.utc).isoformat(),
+                                })
+
+                                try:
+                                    is_authorized = await asyncio.wait_for(auth_future, timeout=30.0)
+                                except asyncio.TimeoutError:
+                                    is_authorized = False
+                                    admin_auth_manager.cancel_challenge(challenge_id)
+
+                                if not is_authorized:
+                                    tool_output = {
+                                        "success": False,
+                                        "error": "Manual admin authorization rejected or timed out. Command aborted.",
+                                    }
+                                    await manager.broadcast({
+                                        "type": "tool_call",
+                                        "name": display_name,
+                                        "status": "denied",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    })
+                                    await manager.broadcast({
+                                        "type": "log",
+                                        "level": "system",
+                                        "message": f"Security Gate: Authorization rejected for '{tool_name}'.",
+                                        "timestamp": datetime.now(timezone.utc).isoformat(),
+                                    })
+                                    messages.append(msg)
+                                    messages.append({
+                                        "role": "tool",
+                                        "content": json.dumps(tool_output),
+                                    })
+                                    continue
 
                             tool_output = execute_tool(tool_name, tool_args)
 

@@ -178,6 +178,27 @@ async def websocket_endpoint(websocket: WebSocket):
                     "type": "state_change",
                     "state": state,
                 })
+            elif msg_type == "admin_auth_submit":
+                challenge_id = data.get("challenge_id", "")
+                password = data.get("password", "")
+                from app.security import admin_auth_manager
+                is_valid = admin_auth_manager.resolve_challenge(challenge_id, password)
+                await websocket.send_json({
+                    "type": "admin_auth_result",
+                    "challenge_id": challenge_id,
+                    "success": is_valid,
+                    "message": "Authorization approved." if is_valid else "Incorrect password. Authorization rejected.",
+                })
+            elif msg_type == "admin_auth_cancel":
+                challenge_id = data.get("challenge_id", "")
+                from app.security import admin_auth_manager
+                admin_auth_manager.cancel_challenge(challenge_id)
+                await websocket.send_json({
+                    "type": "admin_auth_result",
+                    "challenge_id": challenge_id,
+                    "success": False,
+                    "message": "Authorization cancelled by user.",
+                })
             elif msg_type == "ping":
                 await websocket.send_json({"type": "pong"})
     except WebSocketDisconnect:

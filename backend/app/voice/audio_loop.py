@@ -7,9 +7,11 @@ from app.voice.stt import SpeechToTextEngine
 
 
 class AudioInputPipeline:
-    def __init__(self, sample_rate: int = 16000, block_size: int = 1024):
+    def __init__(self, sample_rate: int = 16000, block_size: int = 1024, max_duration_sec: float = 15.0):
         self.sample_rate = sample_rate
         self.block_size = block_size
+        self.max_duration_sec = max_duration_sec
+        self.max_chunks = max(1, int(self.sample_rate * self.max_duration_sec / self.block_size))
         self.vad = VoiceActivityDetector(sample_rate=sample_rate)
         self.wake_detector = WakeWordDetector()
         self.stt = SpeechToTextEngine()
@@ -33,9 +35,10 @@ class AudioInputPipeline:
             self.recorded_chunks.append(chunk)
 
             is_voice, event = self.vad.process_chunk(chunk)
-            if event == "SPEECH_END":
+            if event == "SPEECH_END" or len(self.recorded_chunks) >= self.max_chunks:
                 self.is_recording = False
                 combined = np.concatenate(self.recorded_chunks)
+                self.recorded_chunks = []
                 self._loop.call_soon_threadsafe(
                     asyncio.create_task, on_speech_completed(combined)
                 )

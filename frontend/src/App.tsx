@@ -6,6 +6,7 @@ import { TranscriptArea } from './components/TranscriptArea'
 import { CommandBar } from './components/CommandBar'
 import { ExecutionDrawer } from './components/ExecutionDrawer'
 import { PillView } from './components/PillView'
+import { AdminAuthModal } from './components/AdminAuthModal'
 import { useGipsySocket } from './hooks/useGipsySocket'
 import { useTauriWindow } from './hooks/useTauriWindow'
 import type { AssistantState } from './types/hud'
@@ -51,6 +52,7 @@ export function App() {
     isDrawerOpen,
     setIsDrawerOpen,
     audioAmplitude,
+    adminChallenge,
     telemetry,
     dialogue,
     logs,
@@ -58,13 +60,15 @@ export function App() {
     setOverrideState,
     toggleMic,
     clearLogs,
+    submitAdminAuth,
+    cancelAdminAuth,
   } = useGipsySocket()
 
   const { hudMode, setHudMode } = useTauriWindow()
   const [isPinned, setIsPinned] = useState(false)
 
   useEffect(() => {
-    if (assistantState !== 'IDLE') {
+    if (adminChallenge || assistantState !== 'IDLE') {
       setHudMode('expanded')
     } else if (!isPinned && hudMode === 'expanded') {
       const timer = setTimeout(() => {
@@ -72,7 +76,7 @@ export function App() {
       }, 5000)
       return () => clearTimeout(timer)
     }
-  }, [assistantState, isPinned, hudMode, setHudMode])
+  }, [adminChallenge, assistantState, isPinned, hudMode, setHudMode])
 
   const currentBadge = STATE_BADGES[assistantState]
 
@@ -186,6 +190,14 @@ export function App() {
           onClear={clearLogs}
         />
       </main>
+
+      {adminChallenge && (
+        <AdminAuthModal
+          challenge={adminChallenge}
+          onSubmit={submitAdminAuth}
+          onCancel={cancelAdminAuth}
+        />
+      )}
 
       <footer className="relative z-10 mt-6 flex items-center justify-between text-[11px] text-slate-400">
         <span className="font-mono">Decoupled Architecture • React + Tailwind CSS v4</span>
