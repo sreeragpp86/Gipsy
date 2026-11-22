@@ -81,7 +81,7 @@ def execute_fallback_intent(content: str) -> tuple[str, dict, str] | None:
     return None
 
 
-async def run_gipsy_pipeline(content: str, manager):
+async def _execute_pipeline(content: str, manager):
     await manager.broadcast({
         "type": "state_change",
         "state": "PROCESSING",
@@ -103,7 +103,7 @@ async def run_gipsy_pipeline(content: str, manager):
         ]
 
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
+            async with httpx.AsyncClient(timeout=12.0) as client:
                 chat_resp = await client.post(
                     f"{OLLAMA_BASE_URL}/api/chat",
                     json={
@@ -328,3 +328,19 @@ async def run_gipsy_pipeline(content: str, manager):
         tts_engine.start_worker(manager)
         await tts_engine.enqueue_sentence(reply_text)
         await tts_engine.finish_stream()
+
+
+async def run_gipsy_pipeline(content: str, manager):
+    try:
+        await _execute_pipeline(content, manager)
+    except Exception as e:
+        await manager.broadcast({
+            "type": "log",
+            "level": "system",
+            "message": f"Pipeline execution error: {str(e)}",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
+        await manager.broadcast({
+            "type": "state_change",
+            "state": "IDLE",
+        })

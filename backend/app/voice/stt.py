@@ -26,6 +26,6 @@ class SpeechToTextEngine:
         else:
             audio_float = audio_data
 
-        segments, _ = model.transcribe(audio_float, beam_size=1, language="en")
+        segments, _ = model.transcribe(audio_float, beam_size=1, language="en", vad_filter=True)
         text = " ".join(seg.text for seg in segments).strip()
         return text

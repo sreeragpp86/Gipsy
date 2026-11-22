@@ -92,7 +92,10 @@ class TextToSpeechEngine:
             amp_task = asyncio.create_task(self._emit_speech_amplitudes(manager, duration))
 
             await asyncio.to_thread(sd.play, samples, sample_rate)
-            await asyncio.to_thread(sd.wait)
+            try:
+                await asyncio.wait_for(asyncio.to_thread(sd.wait), timeout=duration + 2.5)
+            except asyncio.TimeoutError:
+                sd.stop()
             await amp_task
             return True
         except Exception as e:
@@ -134,20 +137,34 @@ class TextToSpeechEngine:
         await self._speak_with_macos_say(clean_text, manager)
 
     async def _playback_worker(self, manager):
-        while True:
-            sentence = await self.queue.get()
-            if sentence is None:
-                self.is_playing = False
+        try:
+            while True:
+                sentence = await self.queue.get()
+                if sentence is None:
+                    self.is_playing = False
+                    await manager.broadcast({
+                        "type": "state_change",
+                        "state": "IDLE",
+                    })
+                    break
+
+                self.is_playing = True
                 await manager.broadcast({
                     "type": "state_change",
-                    "state": "IDLE",
+                    "state": "SPEAKING",
                 })
-                break
-
-            self.is_playing = True
+                try:
+                    await self._speak_sentence(sentence, manager)
+                finally:
+                    self.queue.task_done()
+        except Exception as e:
+            self.is_playing = False
+            await manager.broadcast({
+                "type": "log",
+                "level": "system",
+                "message": f"TTS playback worker error: {str(e)}",
+            })
             await manager.broadcast({
                 "type": "state_change",
-                "state": "SPEAKING",
+                "state": "IDLE",
             })
-            await self._speak_sentence(sentence, manager)
-            self.queue.task_done()

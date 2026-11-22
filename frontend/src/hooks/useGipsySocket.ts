@@ -2,7 +2,7 @@ import { useState, useEffect, useRef, useCallback } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
 import type { AdminAuthChallenge, AssistantState, DialogueItem, LogEntry, TelemetryData } from '../types/hud'
 
-export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
+export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
   const [assistantState, setAssistantState] = useState<AssistantState>('IDLE')
   const [isMicActive, setIsMicActive] = useState<boolean>(false)
@@ -74,8 +74,10 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
           return
         }
         setStatus('connected')
-        setTelemetry((prev) => ({ ...prev, isConnected: true }))
-        addLog('system', 'WebSocket connection established', url)
+        setTelemetry((prev) => ({ ...prev, isConnected: true, pingMs: 1 }))
+        addLog('system', 'WebSocket connection established', finalUrl)
+        pingTimestampRef.current = Date.now()
+        ws.send(JSON.stringify({ type: 'ping' }))
       }
 
       ws.onmessage = (event) => {
@@ -207,8 +209,8 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
             setAdminChallenge(null)
             addLog(payload.success ? 'action' : 'system', payload.message || 'Authorization result')
           } else if (msgType === 'pong') {
-            const delta = Date.now() - pingTimestampRef.current
-            setTelemetry((prev) => ({ ...prev, pingMs: delta }))
+            const delta = Math.max(1, Date.now() - pingTimestampRef.current)
+            setTelemetry((prev) => ({ ...prev, pingMs: delta, isConnected: true }))
           }
         } catch {
         }
@@ -216,7 +218,7 @@ export function useGipsySocket(url: string = 'ws://localhost:8000/ws') {
 
       ws.onclose = () => {
         setStatus('disconnected')
-        setTelemetry((prev) => ({ ...prev, isConnected: false }))
+        setTelemetry((prev) => ({ ...prev, isConnected: false, pingMs: 0 }))
         addLog('system', 'WebSocket connection closed. Retrying...')
         scheduleReconnect()
       }

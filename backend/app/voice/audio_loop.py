@@ -32,6 +32,7 @@ class AudioInputPipeline:
         self.recorded_chunks = []
 
     def start_capture(self, on_speech_completed):
+        self.stop_capture()
         self._loop = asyncio.get_running_loop()
         self.recorded_chunks = []
         self.is_recording = True
@@ -52,11 +53,12 @@ class AudioInputPipeline:
                 or current_bytes >= self.max_buffer_bytes
             ):
                 self.is_recording = False
-                combined = np.concatenate(self.recorded_chunks)
-                self.recorded_chunks = []
-                self._loop.call_soon_threadsafe(
-                    asyncio.create_task, on_speech_completed(combined)
-                )
+                if self.recorded_chunks:
+                    combined = np.concatenate(self.recorded_chunks)
+                    self.recorded_chunks = []
+                    self._loop.call_soon_threadsafe(
+                        asyncio.create_task, on_speech_completed(combined)
+                    )
 
         self._stream = sd.InputStream(
             samplerate=self.sample_rate,

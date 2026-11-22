@@ -24,6 +24,7 @@ audio_pipeline = AudioInputPipeline()
 
 
 async def on_speech_captured(audio_data):
+    audio_pipeline.stop_capture()
     await manager.broadcast({
         "type": "state_change",
         "state": "PROCESSING",
@@ -35,24 +36,41 @@ async def on_speech_captured(audio_data):
         "timestamp": datetime.now(timezone.utc).isoformat(),
     })
 
+    text = ""
     try:
         text = await asyncio.to_thread(audio_pipeline.stt.transcribe, audio_data)
     except Exception as e:
-        text = ""
         await manager.broadcast({
             "type": "log",
             "level": "system",
             "message": f"Whisper transcription error: {str(e)}",
         })
 
-    if text.strip():
+    if text and text.strip():
         await manager.broadcast({
             "type": "user_speech",
             "text": text,
             "timestamp": datetime.now(timezone.utc).isoformat(),
         })
-        await run_gipsy_pipeline(text, manager)
+        try:
+            await run_gipsy_pipeline(text, manager)
+        except Exception as e:
+            await manager.broadcast({
+                "type": "log",
+                "level": "system",
+                "message": f"Pipeline execution error: {str(e)}",
+            })
+            await manager.broadcast({
+                "type": "state_change",
+                "state": "IDLE",
+            })
     else:
+        await manager.broadcast({
+            "type": "log",
+            "level": "info",
+            "message": "No clear speech detected in audio capture.",
+            "timestamp": datetime.now(timezone.utc).isoformat(),
+        })
         await manager.broadcast({
             "type": "state_change",
             "state": "IDLE",

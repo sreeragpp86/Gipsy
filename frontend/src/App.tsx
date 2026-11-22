@@ -201,7 +201,7 @@ export function App() {
 
       <footer className="relative z-10 mt-6 flex items-center justify-between text-[11px] text-slate-400">
         <span className="font-mono">Decoupled Architecture • React + Tailwind CSS v4</span>
-        <span className="font-mono">ws://localhost:8000/ws</span>
+        <span className="font-mono">ws://127.0.0.1:8000/ws</span>
       </footer>
     </div>
   )

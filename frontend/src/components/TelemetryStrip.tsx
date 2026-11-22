@@ -48,7 +48,9 @@ export function TelemetryStrip({
         <div className="flex items-center gap-1.5 text-slate-400">
           <Wifi className={`h-3.5 w-3.5 ${telemetry.isConnected ? 'text-emerald-400' : 'text-rose-400'}`} />
           <span className="font-medium uppercase tracking-wider text-[10px] text-slate-400">LINK</span>
-          <span className="font-mono text-slate-200 tabular-nums">{telemetry.pingMs}ms</span>
+          <span className="font-mono text-slate-200 tabular-nums">
+            {telemetry.isConnected ? (telemetry.pingMs ? `${telemetry.pingMs}ms` : '<1ms') : '0ms'}
+          </span>
         </div>
       </div>
 
