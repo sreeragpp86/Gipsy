@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useState } from 'react'
 import { Minimize2, Pin, PinOff } from 'lucide-react'
-import { isTauri } from '@tauri-apps/api/core'
+import { invoke, isTauri } from '@tauri-apps/api/core'
 import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Visualizer } from './components/Visualizer'
 import { TelemetryStrip } from './components/TelemetryStrip'
@@ -69,10 +69,18 @@ export function App() {
   const { hudMode, setHudMode } = useTauriWindow()
   const [isPinned, setIsPinned] = useState(false)
 
-  const handleDrag = useCallback((e: React.MouseEvent) => {
+  const handleDrag = useCallback(async (e: React.MouseEvent) => {
     if (!isTauri()) return
     if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
-    getCurrentWindow().startDragging()
+    try {
+      await invoke('drag_window')
+    } catch {
+      try {
+        await getCurrentWindow().startDragging()
+      } catch {
+        // Drag fallback
+      }
+    }
   }, [])
 
   useEffect(() => {

@@ -12,14 +12,25 @@ use backend::{BackendManager, BackendStatus};
 use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
 
 #[tauri::command]
+fn drag_window(app: AppHandle) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        window.start_dragging().map_err(|e| e.to_string())
+    } else {
+        Err("Main window not found".into())
+    }
+}
+
+#[tauri::command]
 fn set_hud_mode(app: AppHandle, mode: String) -> Result<(), String> {
     if let Some(window) = app.get_webview_window("main") {
         match mode.as_str() {
             "pill" => {
+                let _ = window.set_min_size(Some(LogicalSize::new(200.0, 48.0)));
                 window.set_size(LogicalSize::new(280.0, 56.0)).map_err(|e| e.to_string())?;
                 let _ = window.set_resizable(false);
             }
             "expanded" => {
+                let _ = window.set_min_size(Some(LogicalSize::new(520.0, 500.0)));
                 window.set_size(LogicalSize::new(780.0, 660.0)).map_err(|e| e.to_string())?;
                 let _ = window.set_resizable(true);
             }
@@ -158,6 +169,7 @@ pub fn run() {
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
+            drag_window,
             set_hud_mode,
             set_click_through,
             get_backend_status,
