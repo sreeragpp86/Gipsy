@@ -10,7 +10,7 @@ from app.voice.tts import SentenceChunker, TextToSpeechEngine
 
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "system_prompt.txt"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen2.5:0.5b")
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 
 tts_engine = TextToSpeechEngine()
 
@@ -26,13 +26,16 @@ def load_system_prompt() -> str:
 
 async def get_available_ollama_model() -> str | None:
     try:
-        async with httpx.AsyncClient(timeout=2.0) as client:
+        async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             if resp.status_code == 200:
                 data = resp.json()
                 models = [m["name"] for m in data.get("models", [])]
                 if OLLAMA_MODEL in models or any(OLLAMA_MODEL in m for m in models):
                     return OLLAMA_MODEL
+                for candidate in ["qwen3.5:9b", "qwen2.5:7b", "qwen2.5:0.5b"]:
+                    if any(candidate in m for m in models):
+                        return candidate
                 if models:
                     return models[0]
     except Exception:
@@ -103,7 +106,7 @@ async def _execute_pipeline(content: str, manager):
         ]
 
         try:
-            async with httpx.AsyncClient(timeout=12.0) as client:
+            async with httpx.AsyncClient(timeout=30.0) as client:
                 chat_resp = await client.post(
                     f"{OLLAMA_BASE_URL}/api/chat",
                     json={
@@ -111,6 +114,11 @@ async def _execute_pipeline(content: str, manager):
                         "messages": messages,
                         "tools": OLLAMA_TOOLS,
                         "stream": False,
+                        "think": False,
+                        "options": {
+                            "num_ctx": 8192,
+                            "temperature": 0.3,
+                        },
                     },
                 )
 
@@ -217,6 +225,11 @@ async def _execute_pipeline(content: str, manager):
                                 "model": model_name,
                                 "messages": messages,
                                 "stream": True,
+                                "think": False,
+                                "options": {
+                                    "num_ctx": 8192,
+                                    "temperature": 0.3,
+                                },
                             },
                         )
 
