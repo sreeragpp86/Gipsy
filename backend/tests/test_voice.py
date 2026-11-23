@@ -41,6 +41,22 @@ def test_wake_word_detector():
     loud = np.ones(1600, dtype=np.float32) * 0.5
     assert detector.process_audio(loud) is True
 
+    has_wake, cmd = detector.extract_wake_command("Hey Gipsy, open Safari.")
+    assert has_wake is True
+    assert cmd == "open Safari"
+
+    has_wake, cmd = detector.extract_wake_command("hey gypsy")
+    assert has_wake is True
+    assert cmd == ""
+
+    has_wake, cmd = detector.extract_wake_command("Gipsy, set volume to 50")
+    assert has_wake is True
+    assert cmd == "set volume to 50"
+
+    has_wake, cmd = detector.extract_wake_command("Random background conversation")
+    assert has_wake is False
+    assert cmd == ""
+
 
 def test_tts_queue_lifecycle():
     async def run():

@@ -5,7 +5,7 @@ import type { AdminAuthChallenge, AssistantState, DialogueItem, LogEntry, Teleme
 export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
   const [assistantState, setAssistantState] = useState<AssistantState>('IDLE')
-  const [isMicActive, setIsMicActive] = useState<boolean>(false)
+  const [isMicActive, setIsMicActive] = useState<boolean>(true)
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false)
   const [audioAmplitude, setAudioAmplitude] = useState<number>(0)
   const [adminChallenge, setAdminChallenge] = useState<AdminAuthChallenge | null>(null)
@@ -110,7 +110,6 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
           } else if (msgType === 'state_change') {
             setAssistantState(payload.state)
             if (payload.state === 'IDLE') {
-              setIsMicActive(false)
               setAudioAmplitude(0)
             } else if (payload.state === 'LISTENING') {
               setIsMicActive(true)
