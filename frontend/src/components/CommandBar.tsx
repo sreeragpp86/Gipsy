@@ -8,6 +8,8 @@ interface CommandBarProps {
   onToggleMic: () => void
   onSubmitCommand: (text: string) => void
   onSelectState: (state: AssistantState) => void
+  onFocusChange?: (focused: boolean) => void
+  onInputChange?: (text: string) => void
 }
 
 const AVAILABLE_STATES: AssistantState[] = [
@@ -24,6 +26,8 @@ export function CommandBar({
   onToggleMic,
   onSubmitCommand,
   onSelectState,
+  onFocusChange,
+  onInputChange,
 }: CommandBarProps) {
   const [input, setInput] = useState('')
 
@@ -33,6 +37,7 @@ export function CommandBar({
     if (!trimmed) return
     onSubmitCommand(trimmed)
     setInput('')
+    onInputChange?.('')
   }
 
   return (
@@ -57,7 +62,12 @@ export function CommandBar({
         <input
           type="text"
           value={input}
-          onChange={(e) => setInput(e.target.value)}
+          onChange={(e) => {
+            setInput(e.target.value)
+            onInputChange?.(e.target.value)
+          }}
+          onFocus={() => onFocusChange?.(true)}
+          onBlur={() => onFocusChange?.(false)}
           placeholder="Ask Gipsy or give an OS command..."
           className="h-11 w-full bg-transparent px-3 text-sm text-slate-100 placeholder-slate-500 focus:outline-none"
         />

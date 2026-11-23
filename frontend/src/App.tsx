@@ -68,6 +68,9 @@ export function App() {
 
   const { hudMode, setHudMode } = useTauriWindow()
   const [isPinned, setIsPinned] = useState(false)
+  const [expandSource, setExpandSource] = useState<'manual' | 'auto'>('manual')
+  const [isInputFocused, setIsInputFocused] = useState(false)
+  const [hasDraftText, setHasDraftText] = useState(false)
 
   const handleDrag = useCallback(async (e: React.MouseEvent) => {
     if (!isTauri()) return
@@ -86,13 +89,37 @@ export function App() {
   useEffect(() => {
     if (adminChallenge || assistantState !== 'IDLE') {
       setHudMode('expanded')
-    } else if (!isPinned && hudMode === 'expanded') {
-      const timer = setTimeout(() => {
-        setHudMode('pill')
-      }, 5000)
-      return () => clearTimeout(timer)
+      setExpandSource('auto')
+      return
     }
-  }, [adminChallenge, assistantState, isPinned, hudMode, setHudMode])
+
+    if (
+      hudMode !== 'expanded' ||
+      isPinned ||
+      expandSource === 'manual' ||
+      isInputFocused ||
+      hasDraftText ||
+      isDrawerOpen
+    ) {
+      return
+    }
+
+    const timer = setTimeout(() => {
+      setHudMode('pill')
+    }, 8000)
+
+    return () => clearTimeout(timer)
+  }, [
+    adminChallenge,
+    assistantState,
+    isPinned,
+    hudMode,
+    expandSource,
+    isInputFocused,
+    hasDraftText,
+    isDrawerOpen,
+    setHudMode,
+  ])
 
   const currentBadge = STATE_BADGES[assistantState]
 
@@ -109,7 +136,10 @@ export function App() {
           isMicActive={isMicActive}
           connectionStatus={status}
           onToggleMic={toggleMic}
-          onExpand={() => setHudMode('expanded')}
+          onExpand={() => {
+            setExpandSource('manual')
+            setHudMode('expanded')
+          }}
         />
       </div>
     )
@@ -170,7 +200,10 @@ export function App() {
 
           <button
             type="button"
-            onClick={() => setHudMode('pill')}
+            onClick={() => {
+              setHudMode('pill')
+              setExpandSource('manual')
+            }}
             className="flex h-7 w-7 items-center justify-center rounded-lg border border-white/[0.06] bg-slate-900/60 text-slate-400 transition-colors hover:text-slate-200"
             title="Minimize to Notch Pill"
           >
@@ -212,8 +245,24 @@ export function App() {
           state={assistantState}
           isMicActive={isMicActive}
           onToggleMic={toggleMic}
-          onSubmitCommand={sendCommand}
+          onSubmitCommand={(text) => {
+            sendCommand(text)
+            setHasDraftText(false)
+          }}
           onSelectState={setOverrideState}
+          onFocusChange={(focused) => {
+            setIsInputFocused(focused)
+            if (focused) {
+              setExpandSource('manual')
+            }
+          }}
+          onInputChange={(text) => {
+            const hasText = text.trim().length > 0
+            setHasDraftText(hasText)
+            if (hasText) {
+              setExpandSource('manual')
+            }
+          }}
         />
       </div>
 
