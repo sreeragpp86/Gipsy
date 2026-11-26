@@ -2,6 +2,8 @@ import numpy as np
 
 
 class SpeechToTextEngine:
+    INITIAL_PROMPT = "Hey Gipsy, open Safari, terminal, calculator, telemetry, battery, screen."
+
     def __init__(self, model_size: str = "tiny.en", device: str = "cpu"):
         self.model_size = model_size
         self.device = device
@@ -24,6 +26,12 @@ class SpeechToTextEngine:
         else:
             audio_float = audio_data
 
-        segments, _ = model.transcribe(audio_float, beam_size=1, language="en", vad_filter=True)
-        text = " ".join(seg.text for seg in segments).strip()
-        return text
+        # Secondary vad_filter is disabled because VoiceActivityDetector already segments utterances
+        segments, _ = model.transcribe(
+            audio_float,
+            beam_size=1,
+            language="en",
+            vad_filter=False,
+            initial_prompt=self.INITIAL_PROMPT,
+        )
+        return " ".join(seg.text for seg in segments).strip()

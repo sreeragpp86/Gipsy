@@ -53,7 +53,19 @@ def test_wake_word_detector():
     assert has_wake is True
     assert cmd == "set volume to 50"
 
+    has_wake, cmd = detector.extract_wake_command("Hey tipsy, open Notes")
+    assert has_wake is True
+    assert cmd == "open Notes"
+
+    has_wake, cmd = detector.extract_wake_command("Hello gibsy, check battery")
+    assert has_wake is True
+    assert cmd == "check battery"
+
     has_wake, cmd = detector.extract_wake_command("Random background conversation")
+    assert has_wake is False
+    assert cmd == ""
+
+    has_wake, cmd = detector.extract_wake_command("I feel a bit tipsy today")
     assert has_wake is False
     assert cmd == ""
 

@@ -87,6 +87,9 @@ async def on_speech_captured(audio_data):
         tts_engine.start_worker(manager)
         await tts_engine.enqueue_sentence("I'm listening.")
         await tts_engine.finish_stream()
+        await tts_engine.queue.join()
+        while tts_engine.is_playing:
+            await asyncio.sleep(0.05)
 
         audio_pipeline.set_active_mode(8.0)
         audio_pipeline.resume_listening()

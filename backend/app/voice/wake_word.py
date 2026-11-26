@@ -4,7 +4,10 @@ import numpy as np
 
 class WakeWordDetector:
     WAKE_PATTERN = re.compile(
-        r"(?:^|\b)(?:hey|hi|hello|ok|okay)?\s*(?:gipsy|gypsy|jipsy|gipsi)[,\s.!?]*(.*)$",
+        r"(?:^|\b)(?:"
+        r"(?:hey|hi|hello|ok|okay|yo|a)\s*[,.]?\s*(?:gipsy|gypsy|jipsy|gipsi|gibsy|jepsy|jipsi|tipsy|dipsy|chipsy|yipsy)"
+        r"|(?:gipsy|gypsy|jipsy|gipsi|gibsy|jepsy)"
+        r")[,\s.!?'’]*(.*)$",
         re.IGNORECASE,
     )
 
@@ -17,10 +20,7 @@ class WakeWordDetector:
             return False
 
         peak = np.max(np.abs(chunk))
-        if peak > 0.35:
-            return True
-
-        return False
+        return float(peak) > 0.35
 
     def extract_wake_command(self, text: str) -> tuple[bool, str]:
         if not text:

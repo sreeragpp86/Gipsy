@@ -1,19 +1,11 @@
 import asyncio
-import numpy as np
-import sounddevice as sd
-from app.voice.vad import VoiceActivityDetector
-from app.voice.wake_word import WakeWordDetector
-from app.voice.stt import SpeechToTextEngine
-
-
-import asyncio
 import collections
 import time
 import numpy as np
 import sounddevice as sd
+from app.voice.stt import SpeechToTextEngine
 from app.voice.vad import VoiceActivityDetector
 from app.voice.wake_word import WakeWordDetector
-from app.voice.stt import SpeechToTextEngine
 
 
 class AudioInputPipeline:
@@ -40,7 +32,7 @@ class AudioInputPipeline:
 
         self.is_recording = False
         self.recorded_chunks: list[np.ndarray] = []
-        self._preroll = collections.deque(maxlen=3)
+        self._preroll = collections.deque(maxlen=6)
         self._stream: sd.InputStream | None = None
         self._loop = None
         self._on_speech_completed = None
@@ -56,7 +48,13 @@ class AudioInputPipeline:
         if is_muted:
             self.pause_listening()
         else:
-            self.resume_listening()
+            if self._on_speech_completed and (self._stream is None or not self._stream.active):
+                try:
+                    self.start_listening(self._on_speech_completed, self._on_amplitude)
+                except Exception:
+                    self.resume_listening()
+            else:
+                self.resume_listening()
 
     def pause_listening(self):
         self.is_paused = True
@@ -89,6 +87,10 @@ class AudioInputPipeline:
         self.recorded_chunks = []
         self._preroll.clear()
 
+    def _dispatch_speech(self, audio: np.ndarray):
+        if self._on_speech_completed:
+            asyncio.create_task(self._on_speech_completed(audio))
+
     def _audio_callback(self, indata, frames, time_info, status):
         if self.is_muted or self.is_paused:
             return
@@ -107,10 +109,10 @@ class AudioInputPipeline:
         if self._on_amplitude and (now - self._last_amp_time > 0.05):
             self._last_amp_time = now
             if self._loop and self._loop.is_running():
-                scaled_amp = min(1.0, round(rms * 10.0, 2))
+                scaled_amp = min(1.0, round(rms * 14.0, 2))
                 self._loop.call_soon_threadsafe(self._on_amplitude, scaled_amp)
 
-        is_voice, event = self.vad.process_chunk(chunk)
+        _, event = self.vad.process_chunk(chunk)
 
         if self.is_recording:
             self.recorded_chunks.append(chunk)
@@ -124,10 +126,8 @@ class AudioInputPipeline:
                 if self.recorded_chunks:
                     combined = np.concatenate(self.recorded_chunks)
                     self.recorded_chunks = []
-                    if self._loop and self._loop.is_running() and self._on_speech_completed:
-                        self._loop.call_soon_threadsafe(
-                            asyncio.create_task, self._on_speech_completed(combined)
-                        )
+                    if self._loop and self._loop.is_running():
+                        self._loop.call_soon_threadsafe(self._dispatch_speech, combined)
         else:
             if event == "SPEECH_START":
                 self.is_recording = True

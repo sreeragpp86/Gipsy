@@ -13,8 +13,9 @@ from tools.registry import OLLAMA_TOOLS, execute_tool
 
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "system_prompt.txt"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
-OLLAMA_OPTIONS = {"num_ctx": 8192, "temperature": 0.3}
+OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:4b")
+OLLAMA_OPTIONS = {"num_ctx": 2048, "temperature": 0.3}
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "60s")
 
 tts_engine = TextToSpeechEngine()
 
@@ -69,7 +70,7 @@ async def get_available_ollama_model() -> str | None:
                 models = [m["name"] for m in resp.json().get("models", [])]
                 if OLLAMA_MODEL in models or any(OLLAMA_MODEL in m for m in models):
                     return OLLAMA_MODEL
-                for candidate in ("qwen3.5:9b", "qwen2.5:7b", "qwen2.5:0.5b"):
+                for candidate in ("qwen3.5:4b", "qwen3.5:9b", "qwen2.5:0.5b"):
                     if any(candidate in m for m in models):
                         return candidate
                 if models:
@@ -282,6 +283,7 @@ async def _stream_tool_followup(client: httpx.AsyncClient, model_name: str, mess
             "messages": messages,
             "stream": True,
             "think": False,
+            "keep_alive": OLLAMA_KEEP_ALIVE,
             "options": OLLAMA_OPTIONS,
         },
     )
@@ -338,6 +340,7 @@ async def _execute_pipeline(content: str, manager):
                         "tools": OLLAMA_TOOLS,
                         "stream": False,
                         "think": False,
+                        "keep_alive": OLLAMA_KEEP_ALIVE,
                         "options": OLLAMA_OPTIONS,
                     },
                 )

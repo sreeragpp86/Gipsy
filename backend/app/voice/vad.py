@@ -5,8 +5,8 @@ class VoiceActivityDetector:
     def __init__(
         self,
         sample_rate: int = 16000,
-        energy_threshold: float = 0.015,
-        silence_duration_ms: int = 700,
+        energy_threshold: float = 0.007,
+        silence_duration_ms: int = 600,
     ):
         self.sample_rate = sample_rate
         self.energy_threshold = energy_threshold

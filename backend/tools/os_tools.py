@@ -11,7 +11,8 @@ from app.telemetry import get_system_telemetry as sample_telemetry
 
 SCREENSHOT_PATH = "/tmp/gipsy_screen.png"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
-VISION_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+VISION_MODEL = os.getenv("GIPSY_VISION_MODEL", os.getenv("OLLAMA_MODEL", "qwen3.5:4b"))
+OLLAMA_KEEP_ALIVE = os.getenv("OLLAMA_KEEP_ALIVE", "60s")
 
 RISKY_TOOLS: set[str] = {"kill_process", "run_shell_command", "delete_file"}
 PROTECTED_PROCESSES = {"launchd", "kernel_task", "windowserver", "loginwindow", "finder", "dock"}
@@ -178,7 +179,8 @@ def capture_screen(question: str = "Describe what is currently visible on the sc
                 ],
                 "stream": False,
                 "think": False,
-                "options": {"num_ctx": 8192, "temperature": 0.2},
+                "keep_alive": OLLAMA_KEEP_ALIVE,
+                "options": {"num_ctx": 4096, "temperature": 0.2},
             },
             timeout=45.0,
         )
