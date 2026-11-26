@@ -7,7 +7,7 @@ from datetime import datetime, timezone
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.llm import run_gipsy_pipeline, tts_engine
+from app.llm import confirmation_manager, run_gipsy_pipeline, tts_engine
 from app.security import admin_auth_manager
 from app.telemetry import get_system_telemetry
 from app.voice.audio_loop import AudioInputPipeline
@@ -176,6 +176,10 @@ async def _handle_ws_message(websocket: WebSocket, data: dict):
             audio_pipeline.reset_active_mode()
             await _broadcast_state("IDLE")
             await _broadcast_log("info", "Microphone muted for privacy.")
+    elif msg_type == "confirm_response":
+        request_id = data.get("request_id", "")
+        approved = bool(data.get("approved", False))
+        confirmation_manager.resolve_confirmation(request_id, approved)
     elif msg_type == "admin_auth_submit":
         challenge_id = data.get("challenge_id", "")
         is_valid = admin_auth_manager.resolve_challenge(challenge_id, data.get("password", ""))

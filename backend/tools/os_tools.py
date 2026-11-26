@@ -1,13 +1,20 @@
 import base64
+import getpass
 import os
 import platform
+import re
+import signal
 import subprocess
 import httpx
+import psutil
 from app.telemetry import get_system_telemetry as sample_telemetry
 
 SCREENSHOT_PATH = "/tmp/gipsy_screen.png"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 VISION_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+
+RISKY_TOOLS: set[str] = {"kill_process", "run_shell_command", "delete_file"}
+PROTECTED_PROCESSES = {"launchd", "kernel_task", "windowserver", "loginwindow", "finder", "dock"}
 
 APP_ALIASES = {
     "terminal": "Terminal",
@@ -199,3 +206,72 @@ def capture_screen(question: str = "Describe what is currently visible on the sc
                 os.remove(SCREENSHOT_PATH)
             except OSError:
                 pass
+
+
+def kill_process(name_or_port: str) -> dict:
+    cleaned = (name_or_port or "").strip()
+    if not cleaned:
+        return {"success": False, "error": "Process name or port must not be empty."}
+
+    port_str = cleaned.lstrip(":")
+    terminated: list[dict] = []
+    self_pid = os.getpid()
+
+    if port_str.isdigit():
+        port = int(port_str)
+        if not (1 <= port <= 65535):
+            return {"success": False, "error": f"Invalid port number: {port}."}
+        try:
+            res = subprocess.run(
+                ["lsof", "-ti", f":{port}"],
+                capture_output=True,
+                text=True,
+                timeout=5,
+            )
+            pids = [int(line) for line in res.stdout.splitlines() if line.strip().isdigit()]
+            for pid in pids:
+                if pid <= 1 or pid == self_pid:
+                    continue
+                os.kill(pid, signal.SIGTERM)
+                terminated.append({"pid": pid, "port": port})
+        except Exception as e:
+            return {"success": False, "error": str(e)}
+
+        if not terminated:
+            return {"success": False, "error": f"No active process found listening on port {port}."}
+        return {
+            "success": True,
+            "terminated": terminated,
+            "message": f"Terminated {len(terminated)} process(es) on port {port}.",
+        }
+
+    if not re.match(r"^[a-zA-Z0-9._\-\s]+$", cleaned):
+        return {"success": False, "error": "Invalid characters in process name."}
+
+    target_lower = cleaned.lower()
+    if target_lower in PROTECTED_PROCESSES:
+        return {"success": False, "error": f"Refusing to terminate protected system process '{cleaned}'."}
+
+    current_user = getpass.getuser()
+    for proc in psutil.process_iter(["pid", "name", "username"]):
+        try:
+            info = proc.info
+            pid = info.get("pid")
+            pname = (info.get("name") or "").strip()
+            if not pid or pid <= 1 or pid == self_pid or info.get("username") != current_user:
+                continue
+            if pname.lower() in PROTECTED_PROCESSES:
+                continue
+            if target_lower == pname.lower() or target_lower in pname.lower():
+                proc.terminate()
+                terminated.append({"pid": pid, "name": pname})
+        except (psutil.NoSuchProcess, psutil.AccessDenied):
+            continue
+
+    if not terminated:
+        return {"success": False, "error": f"No matching user process found for '{cleaned}'."}
+    return {
+        "success": True,
+        "terminated": terminated,
+        "message": f"Terminated {len(terminated)} process(es) matching '{cleaned}'.",
+    }

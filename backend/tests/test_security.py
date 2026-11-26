@@ -143,3 +143,86 @@ def test_audio_loop_watchdog_limits():
         pipeline.recorded_chunks = [1, 2, 3]
         pipeline.reset_buffer()
         assert pipeline.recorded_chunks == []
+
+
+def test_risky_tools_classification():
+    from tools.os_tools import RISKY_TOOLS
+
+    assert "kill_process" in RISKY_TOOLS
+    assert "run_shell_command" in RISKY_TOOLS
+    assert "delete_file" in RISKY_TOOLS
+    assert "get_system_telemetry" not in RISKY_TOOLS
+    assert "open_application" not in RISKY_TOOLS
+    assert "set_volume" not in RISKY_TOOLS
+
+
+@pytest.mark.anyio
+async def test_safety_gate_approve_and_deny_flows():
+    import asyncio
+    from app.llm import _authorize_and_execute_tool, confirmation_manager
+
+    class RecordingManager:
+        def __init__(self):
+            self.events = []
+
+        async def broadcast(self, msg):
+            self.events.append(msg)
+
+    # 1. Deny flow: underlying tool MUST NOT execute
+    deny_mgr = RecordingManager()
+
+    async def send_deny():
+        while not any(e.get("type") == "confirm_required" for e in deny_mgr.events):
+            await asyncio.sleep(0.01)
+        req = next(e for e in deny_mgr.events if e.get("type") == "confirm_required")
+        assert req["tool"] == "kill_process"
+        assert req["args"] == {"name_or_port": "9999"}
+        assert confirmation_manager.resolve_confirmation(req["request_id"], False) is True
+
+    with patch("app.llm.execute_tool") as mock_exec:
+        deny_task = asyncio.create_task(send_deny())
+        out_deny = await _authorize_and_execute_tool("kill_process", {"name_or_port": "9999"}, deny_mgr)
+        await deny_task
+
+        assert mock_exec.called is False
+        assert out_deny["success"] is False
+        assert out_deny["error"] == "Action cancelled by operator."
+        assert any(e.get("type") == "tool_call" and e.get("status") == "denied" for e in deny_mgr.events)
+
+    # 2. Approve flow: underlying tool MUST execute and return result
+    approve_mgr = RecordingManager()
+
+    async def send_approve():
+        while not any(e.get("type") == "confirm_required" for e in approve_mgr.events):
+            await asyncio.sleep(0.01)
+        req = next(e for e in approve_mgr.events if e.get("type") == "confirm_required")
+        assert confirmation_manager.resolve_confirmation(req["request_id"], True) is True
+
+    with patch("app.llm.execute_tool", return_value={"success": True, "message": "Terminated"}) as mock_exec:
+        approve_task = asyncio.create_task(send_approve())
+        out_approve = await _authorize_and_execute_tool("kill_process", {"name_or_port": "9999"}, approve_mgr)
+        await approve_task
+
+        mock_exec.assert_called_once_with("kill_process", {"name_or_port": "9999"})
+        assert out_approve["success"] is True
+
+
+def test_websocket_confirm_response_resolves_pending():
+    from app.llm import confirmation_manager
+    import asyncio
+
+    client = TestClient(app)
+    with client.websocket_connect("/ws") as ws:
+        ack = ws.receive_json()
+        assert ack["type"] == "connection_ack"
+
+        # Directly register a future to test WS confirm_response dispatch
+        loop = asyncio.new_event_loop()
+        fut = loop.create_future()
+        confirmation_manager._pending["req-ws-1"] = fut
+        ws.send_json({"type": "confirm_response", "request_id": "req-ws-1", "approved": True})
+        ws.send_json({"type": "ping"})
+        pong = ws.receive_json()
+        assert pong["type"] == "pong"
+        assert fut.done() and fut.result() is True
+        loop.close()

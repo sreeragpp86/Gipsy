@@ -41,3 +41,9 @@ export interface AdminAuthChallenge {
   prompt: string
   expires_in: number
 }
+
+export interface ConfirmRequest {
+  request_id: string
+  tool: string
+  args: Record<string, unknown>
+}

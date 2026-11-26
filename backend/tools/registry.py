@@ -1,6 +1,7 @@
 from tools.os_tools import (
     capture_screen,
     get_system_telemetry,
+    kill_process,
     open_application,
     run_quick_action,
     set_volume,
@@ -91,6 +92,23 @@ OLLAMA_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "kill_process",
+            "description": "Terminate a running user process by process name or listening TCP port (risky action requiring explicit operator confirmation).",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "name_or_port": {
+                        "type": "string",
+                        "description": "Target process name (e.g., Calculator, python3) or port number (e.g., 8080).",
+                    }
+                },
+                "required": ["name_or_port"],
+            },
+        },
+    },
 ]
 
 TOOL_MAPPING = {
@@ -99,6 +117,7 @@ TOOL_MAPPING = {
     "set_volume": set_volume,
     "run_quick_action": run_quick_action,
     "capture_screen": capture_screen,
+    "kill_process": kill_process,
 }
 
 AVAILABLE_TOOLS = TOOL_MAPPING

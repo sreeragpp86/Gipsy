@@ -7,6 +7,7 @@ import { CommandBar } from './components/CommandBar'
 import { ExecutionDrawer } from './components/ExecutionDrawer'
 import { PillView } from './components/PillView'
 import { AdminAuthModal } from './components/AdminAuthModal'
+import { ConfirmActionCard } from './components/ConfirmActionCard'
 import { useGipsySocket } from './hooks/useGipsySocket'
 import { startWindowDrag, useTauriWindow } from './hooks/useTauriWindow'
 import type { AssistantState } from './types/hud'
@@ -53,6 +54,7 @@ export function App() {
     setIsDrawerOpen,
     audioAmplitude,
     adminChallenge,
+    confirmRequest,
     telemetry,
     dialogue,
     logs,
@@ -61,6 +63,7 @@ export function App() {
     clearLogs,
     submitAdminAuth,
     cancelAdminAuth,
+    respondToConfirm,
   } = useGipsySocket()
 
   const { hudMode, setHudMode } = useTauriWindow()
@@ -70,7 +73,7 @@ export function App() {
   const [hasDraftText, setHasDraftText] = useState(false)
 
   useEffect(() => {
-    if (adminChallenge || assistantState !== 'IDLE') {
+    if (adminChallenge || confirmRequest || assistantState !== 'IDLE') {
       setHudMode('expanded')
       setExpandSource('auto')
       return
@@ -94,6 +97,7 @@ export function App() {
     return () => clearTimeout(timer)
   }, [
     adminChallenge,
+    confirmRequest,
     assistantState,
     isPinned,
     hudMode,
@@ -222,6 +226,12 @@ export function App() {
           onClear={clearLogs}
         />
       </div>
+
+      {confirmRequest && (
+        <div className="relative z-30 mt-2.5 shrink-0">
+          <ConfirmActionCard request={confirmRequest} onRespond={respondToConfirm} />
+        </div>
+      )}
 
       <div className="relative z-20 mt-2.5 shrink-0">
         <CommandBar

@@ -2,11 +2,13 @@ import asyncio
 import json
 import os
 import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 import httpx
 from app.security import admin_auth_manager, is_admin_operation
 from app.voice.tts import SentenceChunker, TextToSpeechEngine
+from tools.os_tools import RISKY_TOOLS
 from tools.registry import OLLAMA_TOOLS, execute_tool
 
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "system_prompt.txt"
@@ -15,6 +17,33 @@ OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 OLLAMA_OPTIONS = {"num_ctx": 8192, "temperature": 0.3}
 
 tts_engine = TextToSpeechEngine()
+
+
+class ConfirmationManager:
+    def __init__(self):
+        self._pending: dict[str, asyncio.Future] = {}
+
+    def create_confirmation(self) -> tuple[str, asyncio.Future]:
+        request_id = str(uuid.uuid4())
+        loop = asyncio.get_running_loop()
+        future = loop.create_future()
+        self._pending[request_id] = future
+        return request_id, future
+
+    def resolve_confirmation(self, request_id: str, approved: bool) -> bool:
+        future = self._pending.pop(request_id, None)
+        if not future or future.done():
+            return False
+        future.set_result(bool(approved))
+        return True
+
+    def cancel_confirmation(self, request_id: str):
+        future = self._pending.pop(request_id, None)
+        if future and not future.done():
+            future.set_result(False)
+
+
+confirmation_manager = ConfirmationManager()
 
 
 def _utc_now() -> str:
@@ -139,6 +168,46 @@ async def _authorize_and_execute_tool(tool_name: str, tool_args: dict, manager) 
         "detail": display_name,
         "timestamp": _utc_now(),
     })
+
+    if tool_name in RISKY_TOOLS:
+        request_id, confirm_future = confirmation_manager.create_confirmation()
+        await manager.broadcast({
+            "type": "confirm_required",
+            "request_id": request_id,
+            "tool": tool_name,
+            "args": tool_args,
+        })
+        await manager.broadcast({
+            "type": "log",
+            "level": "system",
+            "message": f"Safety Gate: Operator confirmation required for '{tool_name}'.",
+            "timestamp": _utc_now(),
+        })
+
+        try:
+            approved = await asyncio.wait_for(confirm_future, timeout=30.0)
+        except asyncio.TimeoutError:
+            approved = False
+            confirmation_manager.cancel_confirmation(request_id)
+
+        if not approved:
+            await manager.broadcast({
+                "type": "tool_call",
+                "name": display_name,
+                "status": "denied",
+                "timestamp": _utc_now(),
+            })
+            await manager.broadcast({
+                "type": "log",
+                "level": "system",
+                "message": f"Safety Gate: '{tool_name}' cancelled by operator.",
+                "timestamp": _utc_now(),
+            })
+            return {
+                "success": False,
+                "error": "Action cancelled by operator.",
+                "message": "Action cancelled by operator.",
+            }
 
     if is_admin_operation(tool_name, tool_args):
         challenge_id, auth_future = admin_auth_manager.create_challenge(tool_name, tool_args)

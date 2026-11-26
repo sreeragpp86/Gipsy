@@ -1,6 +1,13 @@
 import { useState, useEffect, useRef, useCallback } from 'react'
 import { invoke, isTauri } from '@tauri-apps/api/core'
-import type { AdminAuthChallenge, AssistantState, DialogueItem, LogEntry, TelemetryData } from '../types/hud'
+import type {
+  AdminAuthChallenge,
+  AssistantState,
+  ConfirmRequest,
+  DialogueItem,
+  LogEntry,
+  TelemetryData,
+} from '../types/hud'
 
 export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
   const [status, setStatus] = useState<'connecting' | 'connected' | 'disconnected'>('disconnected')
@@ -9,6 +16,7 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
   const [isDrawerOpen, setIsDrawerOpen] = useState<boolean>(false)
   const [audioAmplitude, setAudioAmplitude] = useState<number>(0)
   const [adminChallenge, setAdminChallenge] = useState<AdminAuthChallenge | null>(null)
+  const [confirmRequest, setConfirmRequest] = useState<ConfirmRequest | null>(null)
 
   const [telemetry, setTelemetry] = useState<TelemetryData>({
     cpuUsage: 0,
@@ -195,6 +203,13 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
             })
           } else if (msgType === 'log') {
             addLog(payload.level || 'info', payload.message, payload.detail)
+          } else if (msgType === 'confirm_required') {
+            setConfirmRequest({
+              request_id: payload.request_id,
+              tool: payload.tool,
+              args: payload.args || {},
+            })
+            addLog('system', 'Operator Confirmation Required', payload.tool)
           } else if (msgType === 'admin_auth_required') {
             setAdminChallenge({
               challenge_id: payload.challenge_id,
@@ -336,6 +351,23 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
     setAdminChallenge(null)
   }, [])
 
+  const respondToConfirm = useCallback(
+    (request_id: string, approved: boolean) => {
+      if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
+        socketRef.current.send(
+          JSON.stringify({
+            type: 'confirm_response',
+            request_id,
+            approved,
+          })
+        )
+      }
+      setConfirmRequest(null)
+      addLog(approved ? 'action' : 'system', approved ? 'Risky action approved' : 'Risky action denied')
+    },
+    [addLog]
+  )
+
   return {
     status,
     assistantState,
@@ -344,6 +376,7 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
     setIsDrawerOpen,
     audioAmplitude,
     adminChallenge,
+    confirmRequest,
     telemetry,
     dialogue,
     logs,
@@ -352,5 +385,6 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
     clearLogs,
     submitAdminAuth,
     cancelAdminAuth,
+    respondToConfirm,
   }
 }
