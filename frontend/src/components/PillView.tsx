@@ -33,7 +33,7 @@ export function PillView({
     <div
       data-tauri-drag-region
       onMouseDown={startWindowDrag}
-      className="flex h-14 w-full max-w-[280px] select-none items-center justify-between rounded-full border border-white/[0.08] bg-[#0b0e14]/90 px-3 shadow-[0_8px_32px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-2xl transition-all duration-300 cursor-grab active:cursor-grabbing"
+      className="flex h-14 w-full max-w-[280px] select-none items-center justify-between rounded-full border border-white/[0.08] bg-black/35 px-3 shadow-[0_8px_32px_rgba(0,0,0,0.45),inset_0_1px_0_0_rgba(255,255,255,0.08)] transition-all duration-300 cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-center gap-2">
         <GripVertical size={13} className="text-slate-600 shrink-0" />

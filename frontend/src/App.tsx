@@ -129,7 +129,7 @@ export function App() {
   }
 
   return (
-    <div className="relative flex h-screen w-screen flex-col justify-between overflow-hidden bg-[#0b0e14]/85 backdrop-blur-2xl p-4 text-slate-100 selection:bg-cyan-500 selection:text-black">
+    <div className="relative flex h-screen w-screen flex-col justify-between overflow-hidden rounded-2xl border border-white/[0.08] bg-black/30 p-4 text-slate-100 selection:bg-cyan-500 selection:text-black">
       <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(ellipse_80%_60%_at_50%_-10%,rgba(56,189,248,0.06),rgba(0,0,0,0))]" />
 
       <header

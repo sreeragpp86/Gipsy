@@ -86,7 +86,7 @@ pub fn run() {
                         &window,
                         NSVisualEffectMaterial::HudWindow,
                         Some(NSVisualEffectState::Active),
-                        Some(18.0),
+                        Some(16.0),
                     );
                 }
             }
