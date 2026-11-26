@@ -286,20 +286,6 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
     }
   }, [addLog])
 
-  const setOverrideState = useCallback((state: AssistantState) => {
-    setAssistantState(state)
-    setIsMicActive(state === 'LISTENING')
-
-    if (socketRef.current && socketRef.current.readyState === WebSocket.OPEN) {
-      socketRef.current.send(
-        JSON.stringify({
-          type: 'set_state',
-          state,
-        })
-      )
-    }
-  }, [])
-
   const toggleMic = useCallback(() => {
     const nextState = !isMicActive
     setIsMicActive(nextState)
@@ -354,7 +340,6 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
     dialogue,
     logs,
     sendCommand,
-    setOverrideState,
     toggleMic,
     clearLogs,
     submitAdminAuth,

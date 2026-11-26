@@ -3,14 +3,6 @@ use std::path::PathBuf;
 use std::process::{Child, Command};
 use std::sync::Mutex;
 use std::time::Duration;
-use serde::{Deserialize, Serialize};
-
-#[derive(Serialize, Deserialize, Clone, Debug)]
-pub struct BackendStatus {
-    pub is_online: bool,
-    pub is_managed: bool,
-    pub message: String,
-}
 
 pub struct BackendManager {
     child: Mutex<Option<Child>>,
@@ -37,65 +29,45 @@ impl BackendManager {
         .is_ok()
     }
 
+    fn is_valid_backend_dir(path: &PathBuf) -> Option<PathBuf> {
+        if path.join(".venv/bin/python").is_file() && path.join("app/main.py").is_file() {
+            return path.canonicalize().ok();
+        }
+        None
+    }
+
     fn find_backend_root() -> Option<PathBuf> {
         if let Ok(custom_dir) = std::env::var("GIPSY_BACKEND_DIR") {
-            let path = PathBuf::from(custom_dir);
-            if path.join(".venv/bin/python").is_file() && path.join("app/main.py").is_file() {
-                if let Ok(canon) = path.canonicalize() {
-                    return Some(canon);
-                }
+            if let Some(canon) = Self::is_valid_backend_dir(&PathBuf::from(custom_dir)) {
+                return Some(canon);
             }
         }
 
         if let Ok(exe_path) = std::env::current_exe() {
             let mut cur = exe_path.parent();
             for _ in 0..6 {
-                if let Some(parent) = cur {
-                    let candidate = parent.join("backend");
-                    if candidate.join(".venv/bin/python").is_file() && candidate.join("app/main.py").is_file() {
-                        if let Ok(canon) = candidate.canonicalize() {
-                            return Some(canon);
-                        }
+                let Some(parent) = cur else { break };
+                for rel in ["backend", "Resources/backend"] {
+                    if let Some(canon) = Self::is_valid_backend_dir(&parent.join(rel)) {
+                        return Some(canon);
                     }
-                    let bundle_resources = parent.join("Resources/backend");
-                    if bundle_resources.join(".venv/bin/python").is_file() && bundle_resources.join("app/main.py").is_file() {
-                        if let Ok(canon) = bundle_resources.canonicalize() {
-                            return Some(canon);
-                        }
-                    }
-                    cur = parent.parent();
-                } else {
-                    break;
                 }
+                cur = parent.parent();
             }
         }
 
-        let candidates = [
-            PathBuf::from("../../backend"),
-            PathBuf::from("../backend"),
-            PathBuf::from("./backend"),
-            PathBuf::from("backend"),
-        ];
-
-        for candidate in &candidates {
-            let py_path = candidate.join(".venv/bin/python");
-            let app_path = candidate.join("app/main.py");
-            if py_path.is_file() && app_path.is_file() {
-                if let Ok(canon) = candidate.canonicalize() {
-                    return Some(canon);
-                }
+        for rel in ["../../backend", "../backend", "./backend", "backend"] {
+            if let Some(canon) = Self::is_valid_backend_dir(&PathBuf::from(rel)) {
+                return Some(canon);
             }
         }
+
         None
     }
 
-    pub fn spawn_if_needed(&self) -> Result<BackendStatus, String> {
+    pub fn spawn_if_needed(&self) -> Result<(), String> {
         if Self::is_port_open() {
-            return Ok(BackendStatus {
-                is_online: true,
-                is_managed: false,
-                message: "Backend is already running on port 8000.".into(),
-            });
+            return Ok(());
         }
 
         let backend_root = Self::find_backend_root().ok_or_else(|| {
@@ -105,14 +77,22 @@ impl BackendManager {
         let python_bin = backend_root.join(".venv/bin/python");
 
         let mut cmd = Command::new(&python_bin);
-        cmd.args(["-m", "uvicorn", "app.main:app", "--host", "127.0.0.1", "--port", "8000"])
-            .env("GIPSY_AUTH_TOKEN", &self.auth_token)
-            .env_remove("PYTHONPATH")
-            .env_remove("PYTHONHOME")
-            .env_remove("DYLD_LIBRARY_PATH")
-            .env_remove("DYLD_INSERT_LIBRARIES")
-            .env_remove("LD_PRELOAD")
-            .current_dir(&backend_root);
+        cmd.args([
+            "-m",
+            "uvicorn",
+            "app.main:app",
+            "--host",
+            "127.0.0.1",
+            "--port",
+            "8000",
+        ])
+        .env("GIPSY_AUTH_TOKEN", &self.auth_token)
+        .env_remove("PYTHONPATH")
+        .env_remove("PYTHONHOME")
+        .env_remove("DYLD_LIBRARY_PATH")
+        .env_remove("DYLD_INSERT_LIBRARIES")
+        .env_remove("LD_PRELOAD")
+        .current_dir(&backend_root);
 
         let child = cmd
             .spawn()
@@ -125,19 +105,11 @@ impl BackendManager {
         for _ in 0..15 {
             std::thread::sleep(Duration::from_millis(200));
             if Self::is_port_open() {
-                return Ok(BackendStatus {
-                    is_online: true,
-                    is_managed: true,
-                    message: "Spawned and connected to Python backend.".into(),
-                });
+                return Ok(());
             }
         }
 
-        Ok(BackendStatus {
-            is_online: false,
-            is_managed: true,
-            message: "Spawned Python process, waiting for port 8000 to open.".into(),
-        })
+        Ok(())
     }
 
     pub fn stop(&self) {
@@ -146,21 +118,6 @@ impl BackendManager {
                 let _ = child.kill();
                 let _ = child.wait();
             }
-        }
-    }
-
-    pub fn get_status(&self) -> BackendStatus {
-        let is_online = Self::is_port_open();
-        let is_managed = self.child.lock().map(|g| g.is_some()).unwrap_or(false);
-
-        BackendStatus {
-            is_online,
-            is_managed,
-            message: if is_online {
-                "Backend online and reachable.".into()
-            } else {
-                "Backend offline.".into()
-            },
         }
     }
 }

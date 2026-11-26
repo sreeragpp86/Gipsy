@@ -1,9 +1,7 @@
 import asyncio
 import os
 import re
-import subprocess
 from pathlib import Path
-import numpy as np
 import sounddevice as sd
 
 KOKORO_DIR = Path(__file__).resolve().parent.parent.parent / "models" / "kokoro"

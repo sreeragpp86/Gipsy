@@ -1,15 +1,26 @@
 mod backend;
 
+use backend::BackendManager;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, LogicalSize, Manager, State};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
-use backend::{BackendManager, BackendStatus};
 
 #[cfg(target_os = "macos")]
-use window_vibrancy::{apply_vibrancy, NSVisualEffectMaterial, NSVisualEffectState};
+use window_vibrancy::{NSVisualEffectMaterial, NSVisualEffectState, apply_vibrancy};
+
+fn toggle_window_visibility(app: &AppHandle) {
+    if let Some(window) = app.get_webview_window("main") {
+        if window.is_visible().unwrap_or(false) {
+            let _ = window.hide();
+        } else {
+            let _ = window.show();
+            let _ = window.set_focus();
+        }
+    }
+}
 
 #[tauri::command]
 fn drag_window(app: AppHandle) -> Result<(), String> {
@@ -26,12 +37,16 @@ fn set_hud_mode(app: AppHandle, mode: String) -> Result<(), String> {
         match mode.as_str() {
             "pill" => {
                 let _ = window.set_min_size(Some(LogicalSize::new(200.0, 48.0)));
-                window.set_size(LogicalSize::new(280.0, 56.0)).map_err(|e| e.to_string())?;
+                window
+                    .set_size(LogicalSize::new(280.0, 56.0))
+                    .map_err(|e| e.to_string())?;
                 let _ = window.set_resizable(false);
             }
             "expanded" => {
                 let _ = window.set_min_size(Some(LogicalSize::new(520.0, 500.0)));
-                window.set_size(LogicalSize::new(780.0, 660.0)).map_err(|e| e.to_string())?;
+                window
+                    .set_size(LogicalSize::new(780.0, 660.0))
+                    .map_err(|e| e.to_string())?;
                 let _ = window.set_resizable(true);
             }
             _ => return Err(format!("Unknown HUD mode: {}", mode)),
@@ -40,31 +55,6 @@ fn set_hud_mode(app: AppHandle, mode: String) -> Result<(), String> {
     } else {
         Err("Main window not found".into())
     }
-}
-
-#[tauri::command]
-fn set_click_through(app: AppHandle, ignore: bool) -> Result<(), String> {
-    if let Some(window) = app.get_webview_window("main") {
-        window.set_ignore_cursor_events(ignore).map_err(|e| e.to_string())
-    } else {
-        Err("Main window not found".into())
-    }
-}
-
-#[tauri::command]
-fn get_backend_status(manager: State<'_, Arc<BackendManager>>) -> BackendStatus {
-    manager.get_status()
-}
-
-#[tauri::command]
-fn start_backend(manager: State<'_, Arc<BackendManager>>) -> Result<BackendStatus, String> {
-    manager.spawn_if_needed()
-}
-
-#[tauri::command]
-fn stop_backend(manager: State<'_, Arc<BackendManager>>) -> Result<(), String> {
-    manager.stop();
-    Ok(())
 }
 
 #[tauri::command]
@@ -107,55 +97,32 @@ pub fn run() {
                 tauri_plugin_global_shortcut::Builder::new()
                     .with_handler(move |app, s, event| {
                         if s == &shortcut_match && event.state() == ShortcutState::Pressed {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let is_visible = window.is_visible().unwrap_or(false);
-                                if is_visible {
-                                    let _ = window.hide();
-                                } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
-                            }
+                            toggle_window_visibility(app);
                         }
                     })
                     .build(),
             )?;
             let _ = app.global_shortcut().register(shortcut);
 
-            app.handle().plugin(
-                tauri_plugin_autostart::init(
-                    MacosLauncher::LaunchAgent,
-                    Some(vec!["--autostart"]),
-                )
-            )?;
+            app.handle().plugin(tauri_plugin_autostart::init(
+                MacosLauncher::LaunchAgent,
+                Some(vec!["--autostart"]),
+            ))?;
 
-            let status_i = MenuItem::with_id(app, "status", "Gipsy • Standby", false, None::<&str>)?;
-            let toggle_i = MenuItem::with_id(app, "toggle", "Toggle HUD (⌥ + Space)", true, None::<&str>)?;
+            let status_i =
+                MenuItem::with_id(app, "status", "Gipsy • Standby", false, None::<&str>)?;
+            let toggle_i =
+                MenuItem::with_id(app, "toggle", "Toggle HUD (⌥ + Space)", true, None::<&str>)?;
             let quit_i = MenuItem::with_id(app, "quit", "Quit Gipsy", true, None::<&str>)?;
-
             let tray_menu = Menu::with_items(app, &[&status_i, &toggle_i, &quit_i])?;
 
             let mut tray_builder = TrayIconBuilder::new()
                 .menu(&tray_menu)
                 .show_menu_on_left_click(true)
-                .on_menu_event(|app, event| {
-                    match event.id.as_ref() {
-                        "quit" => {
-                            app.exit(0);
-                        }
-                        "toggle" => {
-                            if let Some(window) = app.get_webview_window("main") {
-                                let is_visible = window.is_visible().unwrap_or(false);
-                                if is_visible {
-                                    let _ = window.hide();
-                                } else {
-                                    let _ = window.show();
-                                    let _ = window.set_focus();
-                                }
-                            }
-                        }
-                        _ => {}
-                    }
+                .on_menu_event(|app, event| match event.id.as_ref() {
+                    "quit" => app.exit(0),
+                    "toggle" => toggle_window_visibility(app),
+                    _ => {}
                 });
 
             if let Some(icon) = app.default_window_icon() {
@@ -163,7 +130,6 @@ pub fn run() {
             }
 
             let _ = tray_builder.build(app)?;
-
             let _ = backend_setup.spawn_if_needed();
 
             Ok(())
@@ -171,10 +137,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             drag_window,
             set_hud_mode,
-            set_click_through,
-            get_backend_status,
-            start_backend,
-            stop_backend,
             get_auth_token
         ])
         .build(tauri::generate_context!())

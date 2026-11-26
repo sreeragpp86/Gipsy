@@ -5,14 +5,20 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 import httpx
-from tools.registry import OLLAMA_TOOLS, execute_tool
+from app.security import admin_auth_manager, is_admin_operation
 from app.voice.tts import SentenceChunker, TextToSpeechEngine
+from tools.registry import OLLAMA_TOOLS, execute_tool
 
 SYSTEM_PROMPT_PATH = Path(__file__).resolve().parent.parent.parent / "config" / "system_prompt.txt"
 OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_OPTIONS = {"num_ctx": 8192, "temperature": 0.3}
 
 tts_engine = TextToSpeechEngine()
+
+
+def _utc_now() -> str:
+    return datetime.now(timezone.utc).isoformat()
 
 
 def load_system_prompt() -> str:
@@ -29,11 +35,10 @@ async def get_available_ollama_model() -> str | None:
         async with httpx.AsyncClient(timeout=3.0) as client:
             resp = await client.get(f"{OLLAMA_BASE_URL}/api/tags")
             if resp.status_code == 200:
-                data = resp.json()
-                models = [m["name"] for m in data.get("models", [])]
+                models = [m["name"] for m in resp.json().get("models", [])]
                 if OLLAMA_MODEL in models or any(OLLAMA_MODEL in m for m in models):
                     return OLLAMA_MODEL
-                for candidate in ["qwen3.5:9b", "qwen2.5:7b", "qwen2.5:0.5b"]:
+                for candidate in ("qwen3.5:9b", "qwen2.5:7b", "qwen2.5:0.5b"):
                     if any(candidate in m for m in models):
                         return candidate
                 if models:
@@ -49,11 +54,18 @@ def execute_fallback_intent(content: str) -> tuple[str, dict, str] | None:
     open_match = re.search(r"(?:open|launch)\s+([a-zA-Z0-9\s]+)", text)
     if open_match:
         app_name = open_match.group(1).strip()
-        from app.security import is_admin_operation
         if is_admin_operation("open_application", {"app_name": app_name}):
-            return ("open_application", {"app_name": app_name}, f"Launching {app_name} is an admin-level action and requires authentication on your HUD.")
+            return (
+                "open_application",
+                {"app_name": app_name},
+                f"Launching {app_name} is an admin-level action and requires authentication on your HUD.",
+            )
         result = execute_tool("open_application", {"app_name": app_name})
-        msg = f"Opening {app_name}. Ready on your display." if result.get("success") else f"Unable to locate application {app_name}."
+        msg = (
+            f"Opening {app_name}. Ready on your display."
+            if result.get("success")
+            else f"Unable to locate application {app_name}."
+        )
         return ("open_application", {"app_name": app_name}, msg)
 
     vol_match = re.search(r"(?:volume|audio)\s*(?:to\s*)?(\d+)", text)
@@ -75,7 +87,11 @@ def execute_fallback_intent(content: str) -> tuple[str, dict, str] | None:
         t = res.get("telemetry", {})
         cpu = t.get("cpu_usage", 0)
         ram = t.get("memory_used", 0)
-        return ("get_system_telemetry", {}, f"System operating normally. CPU load at {cpu} percent with {ram} gigabytes memory in use.")
+        return (
+            "get_system_telemetry",
+            {},
+            f"System operating normally. CPU load at {cpu} percent with {ram} gigabytes memory in use.",
+        )
 
     if "lock" in text:
         execute_tool("run_quick_action", {"action": "lock_screen"})
@@ -84,27 +100,148 @@ def execute_fallback_intent(content: str) -> tuple[str, dict, str] | None:
     return None
 
 
-async def _execute_pipeline(content: str, manager):
+async def _emit_reply(reply_text: str, manager, tool_info: dict | None = None):
+    payload = {
+        "type": "assistant_message",
+        "content": reply_text,
+        "timestamp": _utc_now(),
+    }
+    if tool_info is not None:
+        payload["tool"] = tool_info
+
+    await manager.broadcast(payload)
+    tts_engine.start_worker(manager)
+    await tts_engine.enqueue_sentence(reply_text)
+    await tts_engine.finish_stream()
+
+
+async def _authorize_and_execute_tool(tool_name: str, tool_args: dict, manager) -> dict:
+    display_name = f"{tool_name}({json.dumps(tool_args)})"
+
+    await manager.broadcast({"type": "state_change", "state": "EXECUTING_TOOL"})
     await manager.broadcast({
-        "type": "state_change",
-        "state": "PROCESSING",
+        "type": "tool_call",
+        "name": display_name,
+        "status": "running",
+        "timestamp": _utc_now(),
     })
     await manager.broadcast({
         "type": "log",
+        "level": "action",
+        "message": f"Executing tool: {tool_name}",
+        "detail": display_name,
+        "timestamp": _utc_now(),
+    })
+
+    if is_admin_operation(tool_name, tool_args):
+        challenge_id, auth_future = admin_auth_manager.create_challenge(tool_name, tool_args)
+        await manager.broadcast({
+            "type": "admin_auth_required",
+            "challenge_id": challenge_id,
+            "tool_name": tool_name,
+            "arguments": tool_args,
+            "prompt": f"Manual authentication required for '{tool_name}'. Please authorize on HUD.",
+            "expires_in": 30,
+            "timestamp": _utc_now(),
+        })
+        await manager.broadcast({
+            "type": "log",
+            "level": "system",
+            "message": f"Security Gate: Operation '{tool_name}' requires manual admin authorization.",
+            "timestamp": _utc_now(),
+        })
+
+        try:
+            is_authorized = await asyncio.wait_for(auth_future, timeout=30.0)
+        except asyncio.TimeoutError:
+            is_authorized = False
+            admin_auth_manager.cancel_challenge(challenge_id)
+
+        if not is_authorized:
+            await manager.broadcast({
+                "type": "tool_call",
+                "name": display_name,
+                "status": "denied",
+                "timestamp": _utc_now(),
+            })
+            await manager.broadcast({
+                "type": "log",
+                "level": "system",
+                "message": f"Security Gate: Authorization rejected for '{tool_name}'.",
+                "timestamp": _utc_now(),
+            })
+            return {
+                "success": False,
+                "error": "Manual admin authorization rejected or timed out. Command aborted.",
+            }
+
+    tool_output = execute_tool(tool_name, tool_args)
+    await manager.broadcast({
+        "type": "tool_call",
+        "name": display_name,
+        "status": "completed",
+        "timestamp": _utc_now(),
+    })
+    return tool_output
+
+
+async def _stream_tool_followup(client: httpx.AsyncClient, model_name: str, messages: list[dict], manager):
+    tts_engine.start_worker(manager)
+    chunker = SentenceChunker()
+
+    stream_req = await client.post(
+        f"{OLLAMA_BASE_URL}/api/chat",
+        json={
+            "model": model_name,
+            "messages": messages,
+            "stream": True,
+            "think": False,
+            "options": OLLAMA_OPTIONS,
+        },
+    )
+
+    full_text = ""
+    async for line in stream_req.aiter_lines():
+        if not line:
+            continue
+        try:
+            chunk = json.loads(line)
+            token = chunk.get("message", {}).get("content", "")
+            if token:
+                full_text += token
+                await manager.broadcast({"type": "stream_chunk", "chunk": token})
+                for sentence in chunker.add_token(token):
+                    await tts_engine.enqueue_sentence(sentence)
+        except Exception:
+            pass
+
+    remaining = chunker.flush()
+    if remaining:
+        await tts_engine.enqueue_sentence(remaining)
+
+    await manager.broadcast({
+        "type": "assistant_message",
+        "content": full_text.strip().replace("*", ""),
+        "timestamp": _utc_now(),
+    })
+    await tts_engine.finish_stream()
+
+
+async def _execute_pipeline(content: str, manager):
+    await manager.broadcast({"type": "state_change", "state": "PROCESSING"})
+    await manager.broadcast({
+        "type": "log",
         "level": "info",
-        "message": f"Instruction received: \"{content}\"",
-        "timestamp": datetime.now(timezone.utc).isoformat(),
+        "message": f'Instruction received: "{content}"',
+        "timestamp": _utc_now(),
     })
 
     model_name = await get_available_ollama_model()
-
     if model_name:
-        system_prompt = load_system_prompt()
         messages = [
-            {"role": "system", "content": system_prompt},
+            {"role": "system", "content": load_system_prompt()},
             {"role": "user", "content": content},
         ]
-
         try:
             async with httpx.AsyncClient(timeout=30.0) as client:
                 chat_resp = await client.post(
@@ -115,174 +252,36 @@ async def _execute_pipeline(content: str, manager):
                         "tools": OLLAMA_TOOLS,
                         "stream": False,
                         "think": False,
-                        "options": {
-                            "num_ctx": 8192,
-                            "temperature": 0.3,
-                        },
+                        "options": OLLAMA_OPTIONS,
                     },
                 )
 
                 if chat_resp.status_code == 200:
-                    data = chat_resp.json()
-                    msg = data.get("message", {})
+                    msg = chat_resp.json().get("message", {})
                     tool_calls = msg.get("tool_calls", [])
-
                     if tool_calls:
                         for call in tool_calls:
                             func = call.get("function", {})
-                            tool_name = func.get("name")
-                            tool_args = func.get("arguments", {})
-                            display_name = f"{tool_name}({json.dumps(tool_args)})"
-
-                            await manager.broadcast({
-                                "type": "state_change",
-                                "state": "EXECUTING_TOOL",
-                            })
-                            await manager.broadcast({
-                                "type": "tool_call",
-                                "name": display_name,
-                                "status": "running",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-                            await manager.broadcast({
-                                "type": "log",
-                                "level": "action",
-                                "message": f"Executing tool: {tool_name}",
-                                "detail": display_name,
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-
-                            from app.security import is_admin_operation, admin_auth_manager
-                            if is_admin_operation(tool_name, tool_args):
-                                challenge_id, auth_future = admin_auth_manager.create_challenge(tool_name, tool_args)
-                                await manager.broadcast({
-                                    "type": "admin_auth_required",
-                                    "challenge_id": challenge_id,
-                                    "tool_name": tool_name,
-                                    "arguments": tool_args,
-                                    "prompt": f"Manual authentication required for '{tool_name}'. Please authorize on HUD.",
-                                    "expires_in": 30,
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
-                                await manager.broadcast({
-                                    "type": "log",
-                                    "level": "system",
-                                    "message": f"Security Gate: Operation '{tool_name}' requires manual admin authorization.",
-                                    "timestamp": datetime.now(timezone.utc).isoformat(),
-                                })
-
-                                try:
-                                    is_authorized = await asyncio.wait_for(auth_future, timeout=30.0)
-                                except asyncio.TimeoutError:
-                                    is_authorized = False
-                                    admin_auth_manager.cancel_challenge(challenge_id)
-
-                                if not is_authorized:
-                                    tool_output = {
-                                        "success": False,
-                                        "error": "Manual admin authorization rejected or timed out. Command aborted.",
-                                    }
-                                    await manager.broadcast({
-                                        "type": "tool_call",
-                                        "name": display_name,
-                                        "status": "denied",
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    })
-                                    await manager.broadcast({
-                                        "type": "log",
-                                        "level": "system",
-                                        "message": f"Security Gate: Authorization rejected for '{tool_name}'.",
-                                        "timestamp": datetime.now(timezone.utc).isoformat(),
-                                    })
-                                    messages.append(msg)
-                                    messages.append({
-                                        "role": "tool",
-                                        "content": json.dumps(tool_output),
-                                    })
-                                    continue
-
-                            tool_output = execute_tool(tool_name, tool_args)
-
-                            await manager.broadcast({
-                                "type": "tool_call",
-                                "name": display_name,
-                                "status": "completed",
-                                "timestamp": datetime.now(timezone.utc).isoformat(),
-                            })
-
+                            tool_output = await _authorize_and_execute_tool(
+                                func.get("name", ""),
+                                func.get("arguments", {}),
+                                manager,
+                            )
                             messages.append(msg)
-                            messages.append({
-                                "role": "tool",
-                                "content": json.dumps(tool_output),
-                            })
+                            messages.append({"role": "tool", "content": json.dumps(tool_output)})
 
-                        tts_engine.start_worker(manager)
-                        chunker = SentenceChunker()
-
-                        stream_req = await client.post(
-                            f"{OLLAMA_BASE_URL}/api/chat",
-                            json={
-                                "model": model_name,
-                                "messages": messages,
-                                "stream": True,
-                                "think": False,
-                                "options": {
-                                    "num_ctx": 8192,
-                                    "temperature": 0.3,
-                                },
-                            },
-                        )
-
-                        full_text = ""
-                        async for line in stream_req.aiter_lines():
-                            if not line:
-                                continue
-                            try:
-                                chunk = json.loads(line)
-                                token = chunk.get("message", {}).get("content", "")
-                                if token:
-                                    full_text += token
-                                    await manager.broadcast({
-                                        "type": "stream_chunk",
-                                        "chunk": token,
-                                    })
-                                    sentences = chunker.add_token(token)
-                                    for s in sentences:
-                                        await tts_engine.enqueue_sentence(s)
-                            except Exception:
-                                pass
-
-                        remaining = chunker.flush()
-                        if remaining:
-                            await tts_engine.enqueue_sentence(remaining)
-
-                        clean_reply = full_text.strip().replace("*", "")
-                        await manager.broadcast({
-                            "type": "assistant_message",
-                            "content": clean_reply,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        })
-
-                        await tts_engine.finish_stream()
+                        await _stream_tool_followup(client, model_name, messages, manager)
                         return
 
-                    else:
-                        reply_text = msg.get("content", "").strip().replace("*", "")
-                        await manager.broadcast({
-                            "type": "assistant_message",
-                            "content": reply_text,
-                            "timestamp": datetime.now(timezone.utc).isoformat(),
-                        })
-
-                        tts_engine.start_worker(manager)
-                        await tts_engine.enqueue_sentence(reply_text)
-                        await tts_engine.finish_stream()
-                        return
+                    reply_text = msg.get("content", "").strip().replace("*", "")
+                    await _emit_reply(reply_text, manager)
+                    return
         except Exception as e:
             await manager.broadcast({
                 "type": "log",
                 "level": "system",
-                "message": f"Ollama dispatch failed: {str(e)}",
+                "message": f"Ollama dispatch failed: {e}",
+                "timestamp": _utc_now(),
             })
 
     fallback = execute_fallback_intent(content)
@@ -290,57 +289,30 @@ async def _execute_pipeline(content: str, manager):
         tool_name, tool_args, reply_text = fallback
         display_name = f"{tool_name}({json.dumps(tool_args)})"
 
-        await manager.broadcast({
-            "type": "state_change",
-            "state": "EXECUTING_TOOL",
-        })
+        await manager.broadcast({"type": "state_change", "state": "EXECUTING_TOOL"})
         await manager.broadcast({
             "type": "tool_call",
             "name": display_name,
             "status": "running",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": _utc_now(),
         })
         await manager.broadcast({
             "type": "log",
             "level": "action",
             "message": f"Dispatched OS tool: {tool_name}",
             "detail": display_name,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": _utc_now(),
         })
-
         await asyncio.sleep(0.5)
-
         await manager.broadcast({
             "type": "tool_call",
             "name": display_name,
             "status": "completed",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "timestamp": _utc_now(),
         })
-
-        await manager.broadcast({
-            "type": "assistant_message",
-            "content": reply_text,
-            "tool": {
-                "name": display_name,
-                "status": "completed",
-            },
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-
-        tts_engine.start_worker(manager)
-        await tts_engine.enqueue_sentence(reply_text)
-        await tts_engine.finish_stream()
+        await _emit_reply(reply_text, manager, tool_info={"name": display_name, "status": "completed"})
     else:
-        reply_text = f"Instruction recognized: {content}. Standing by for tactical directives."
-        await manager.broadcast({
-            "type": "assistant_message",
-            "content": reply_text,
-            "timestamp": datetime.now(timezone.utc).isoformat(),
-        })
-
-        tts_engine.start_worker(manager)
-        await tts_engine.enqueue_sentence(reply_text)
-        await tts_engine.finish_stream()
+        await _emit_reply(f"Instruction recognized: {content}. Standing by for tactical directives.", manager)
 
 
 async def run_gipsy_pipeline(content: str, manager):
@@ -350,10 +322,7 @@ async def run_gipsy_pipeline(content: str, manager):
         await manager.broadcast({
             "type": "log",
             "level": "system",
-            "message": f"Pipeline execution error: {str(e)}",
-            "timestamp": datetime.now(timezone.utc).isoformat(),
+            "message": f"Pipeline execution error: {e}",
+            "timestamp": _utc_now(),
         })
-        await manager.broadcast({
-            "type": "state_change",
-            "state": "IDLE",
-        })
+        await manager.broadcast({"type": "state_change", "state": "IDLE"})

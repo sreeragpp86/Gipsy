@@ -1,6 +1,5 @@
 import { GripVertical, Maximize2, Mic, MicOff } from 'lucide-react'
-import { invoke, isTauri } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
+import { startWindowDrag } from '../hooks/useTauriWindow'
 import type { AssistantState } from '../types/hud'
 
 interface PillViewProps {
@@ -30,24 +29,10 @@ export function PillView({
 }: PillViewProps) {
   const current = STATE_DOTS[state]
 
-  const handleDrag = async (e: React.MouseEvent) => {
-    if (!isTauri()) return
-    if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
-    try {
-      await invoke('drag_window')
-    } catch {
-      try {
-        await getCurrentWindow().startDragging()
-      } catch {
-        // Drag fallback
-      }
-    }
-  }
-
   return (
     <div
       data-tauri-drag-region
-      onMouseDown={handleDrag}
+      onMouseDown={startWindowDrag}
       className="flex h-14 w-full max-w-[280px] select-none items-center justify-between rounded-full border border-white/[0.08] bg-[#0b0e14]/90 px-3 shadow-[0_8px_32px_rgba(0,0,0,0.6),inset_0_1px_0_0_rgba(255,255,255,0.06)] backdrop-blur-2xl transition-all duration-300 cursor-grab active:cursor-grabbing"
     >
       <div className="flex items-center gap-2">

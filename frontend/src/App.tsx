@@ -1,7 +1,5 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Minimize2, Pin, PinOff } from 'lucide-react'
-import { invoke, isTauri } from '@tauri-apps/api/core'
-import { getCurrentWindow } from '@tauri-apps/api/window'
 import { Visualizer } from './components/Visualizer'
 import { TelemetryStrip } from './components/TelemetryStrip'
 import { TranscriptArea } from './components/TranscriptArea'
@@ -10,7 +8,7 @@ import { ExecutionDrawer } from './components/ExecutionDrawer'
 import { PillView } from './components/PillView'
 import { AdminAuthModal } from './components/AdminAuthModal'
 import { useGipsySocket } from './hooks/useGipsySocket'
-import { useTauriWindow } from './hooks/useTauriWindow'
+import { startWindowDrag, useTauriWindow } from './hooks/useTauriWindow'
 import type { AssistantState } from './types/hud'
 
 const STATE_BADGES: Record<AssistantState, { label: string; dot: string; text: string; border: string }> = {
@@ -59,7 +57,6 @@ export function App() {
     dialogue,
     logs,
     sendCommand,
-    setOverrideState,
     toggleMic,
     clearLogs,
     submitAdminAuth,
@@ -71,20 +68,6 @@ export function App() {
   const [expandSource, setExpandSource] = useState<'manual' | 'auto'>('manual')
   const [isInputFocused, setIsInputFocused] = useState(false)
   const [hasDraftText, setHasDraftText] = useState(false)
-
-  const handleDrag = useCallback(async (e: React.MouseEvent) => {
-    if (!isTauri()) return
-    if ((e.target as HTMLElement).closest('button, input, textarea, a')) return
-    try {
-      await invoke('drag_window')
-    } catch {
-      try {
-        await getCurrentWindow().startDragging()
-      } catch {
-        // Drag fallback
-      }
-    }
-  }, [])
 
   useEffect(() => {
     if (adminChallenge || assistantState !== 'IDLE') {
@@ -127,7 +110,7 @@ export function App() {
     return (
       <div
         data-tauri-drag-region
-        onMouseDown={handleDrag}
+        onMouseDown={startWindowDrag}
         className="flex h-screen w-screen items-center justify-center bg-transparent p-0 select-none cursor-grab active:cursor-grabbing"
       >
         <PillView
@@ -151,7 +134,7 @@ export function App() {
 
       <header
         data-tauri-drag-region
-        onMouseDown={handleDrag}
+        onMouseDown={startWindowDrag}
         className="relative z-20 mb-2 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between select-none cursor-grab active:cursor-grabbing shrink-0"
       >
         <div className="flex items-center gap-3">
@@ -242,14 +225,12 @@ export function App() {
 
       <div className="relative z-20 mt-2.5 shrink-0">
         <CommandBar
-          state={assistantState}
           isMicActive={isMicActive}
           onToggleMic={toggleMic}
           onSubmitCommand={(text) => {
             sendCommand(text)
             setHasDraftText(false)
           }}
-          onSelectState={setOverrideState}
           onFocusChange={(focused) => {
             setIsInputFocused(focused)
             if (focused) {
@@ -275,8 +256,8 @@ export function App() {
       )}
 
       <footer className="relative z-10 mt-2 flex items-center justify-between text-[10px] text-slate-500 shrink-0">
-        <span className="font-mono">Decoupled Architecture • React + Tailwind CSS v4</span>
-        <span className="font-mono">ws://127.0.0.1:8000/ws</span>
+        <span className="font-mono">Project Gipsy • Local Voice & OS Surface</span>
+        <span className="font-mono">127.0.0.1:8000</span>
       </footer>
     </div>
   )
