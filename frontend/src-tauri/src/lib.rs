@@ -3,8 +3,8 @@ mod backend;
 use backend::BackendManager;
 use std::sync::Arc;
 use tauri::menu::{Menu, MenuItem};
-use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, LogicalSize, Manager, State};
+use tauri::tray::{MouseButton, MouseButtonState, TrayIconBuilder, TrayIconEvent};
+use tauri::{ActivationPolicy, AppHandle, LogicalSize, Manager, State, WindowEvent};
 use tauri_plugin_autostart::MacosLauncher;
 use tauri_plugin_global_shortcut::{Code, GlobalShortcutExt, Modifiers, Shortcut, ShortcutState};
 
@@ -62,6 +62,20 @@ fn get_auth_token(manager: State<'_, Arc<BackendManager>>) -> String {
     manager.get_token()
 }
 
+#[tauri::command]
+fn set_window_visible(app: AppHandle, visible: bool) -> Result<(), String> {
+    if let Some(window) = app.get_webview_window("main") {
+        if visible {
+            window.show().map_err(|e| e.to_string())?;
+        } else {
+            window.hide().map_err(|e| e.to_string())?;
+        }
+        Ok(())
+    } else {
+        Err("Main window not found".into())
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let backend_manager = Arc::new(BackendManager::new());
@@ -70,7 +84,16 @@ pub fn run() {
 
     tauri::Builder::default()
         .manage(backend_manager)
+        .on_window_event(|window, event| {
+            if let WindowEvent::CloseRequested { api, .. } = event {
+                api.prevent_close();
+                let _ = window.hide();
+            }
+        })
         .setup(move |app| {
+            #[cfg(target_os = "macos")]
+            app.set_activation_policy(ActivationPolicy::Accessory);
+
             if cfg!(debug_assertions) {
                 app.handle().plugin(
                     tauri_plugin_log::Builder::default()
@@ -109,27 +132,35 @@ pub fn run() {
                 Some(vec!["--autostart"]),
             ))?;
 
-            let status_i =
-                MenuItem::with_id(app, "status", "Gipsy • Standby", false, None::<&str>)?;
-            let toggle_i =
-                MenuItem::with_id(app, "toggle", "Toggle HUD (⌥ + Space)", true, None::<&str>)?;
-            let quit_i = MenuItem::with_id(app, "quit", "Quit Gipsy", true, None::<&str>)?;
-            let tray_menu = Menu::with_items(app, &[&status_i, &toggle_i, &quit_i])?;
+            let toggle_i = MenuItem::with_id(app, "toggle", "Toggle Gipsy", true, None::<&str>)?;
+            let quit_i = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
+            let tray_menu = Menu::with_items(app, &[&toggle_i, &quit_i])?;
 
-            let mut tray_builder = TrayIconBuilder::new()
+            let tray_icon = tauri::include_image!("icons/tray-icon@2x.png");
+
+            let _tray = TrayIconBuilder::new()
+                .icon(tray_icon)
+                .icon_as_template(true)
+                .tooltip("Project Gipsy")
                 .menu(&tray_menu)
-                .show_menu_on_left_click(true)
+                .show_menu_on_left_click(false)
                 .on_menu_event(|app, event| match event.id.as_ref() {
-                    "quit" => app.exit(0),
                     "toggle" => toggle_window_visibility(app),
+                    "quit" => app.exit(0),
                     _ => {}
-                });
+                })
+                .on_tray_icon_event(|tray, event| {
+                    if let TrayIconEvent::Click {
+                        button: MouseButton::Left,
+                        button_state: MouseButtonState::Up,
+                        ..
+                    } = event
+                    {
+                        toggle_window_visibility(tray.app_handle());
+                    }
+                })
+                .build(app)?;
 
-            if let Some(icon) = app.default_window_icon() {
-                tray_builder = tray_builder.icon(icon.clone());
-            }
-
-            let _ = tray_builder.build(app)?;
             let _ = backend_setup.spawn_if_needed();
 
             Ok(())
@@ -137,7 +168,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             drag_window,
             set_hud_mode,
-            get_auth_token
+            get_auth_token,
+            set_window_visible
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application")

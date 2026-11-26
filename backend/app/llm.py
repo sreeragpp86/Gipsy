@@ -26,7 +26,9 @@ def load_system_prompt() -> str:
         return SYSTEM_PROMPT_PATH.read_text(encoding="utf-8").strip()
     return (
         "You are Gipsy, a calm, crisp, and analytical tactical OS assistant. "
-        "Keep spoken replies strictly concise: exactly 1 to 2 sentences with zero markdown or emojis."
+        "Keep spoken replies strictly concise: exactly 1 to 2 sentences with zero markdown or emojis. "
+        "You have access to capture_screen whenever the user asks about what is on their screen, "
+        "an error message, or open windows."
     )
 
 
@@ -96,6 +98,11 @@ def execute_fallback_intent(content: str) -> tuple[str, dict, str] | None:
     if "lock" in text:
         execute_tool("run_quick_action", {"action": "lock_screen"})
         return ("run_quick_action", {"action": "lock_screen"}, "Workstation locked.")
+
+    if "screen" in text and any(k in text for k in ("look", "see", "what", "analyze", "read", "error", "window")):
+        res = execute_tool("capture_screen", {"question": content})
+        msg = res.get("analysis") if res.get("success") else res.get("error", "Unable to capture screen.")
+        return ("capture_screen", {"question": content}, msg)
 
     return None
 
@@ -175,7 +182,17 @@ async def _authorize_and_execute_tool(tool_name: str, tool_args: dict, manager) 
                 "error": "Manual admin authorization rejected or timed out. Command aborted.",
             }
 
-    tool_output = execute_tool(tool_name, tool_args)
+    if tool_name == "capture_screen":
+        await manager.broadcast({"type": "screen_capture_start"})
+        # Allow macOS WindowServer a brief frame to hide the HUD before screencapture runs
+        await asyncio.sleep(0.22)
+
+    try:
+        tool_output = await asyncio.to_thread(execute_tool, tool_name, tool_args)
+    finally:
+        if tool_name == "capture_screen":
+            await manager.broadcast({"type": "screen_capture_end"})
+
     await manager.broadcast({
         "type": "tool_call",
         "name": display_name,

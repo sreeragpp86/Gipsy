@@ -1,6 +1,13 @@
+import base64
+import os
 import platform
 import subprocess
+import httpx
 from app.telemetry import get_system_telemetry as sample_telemetry
+
+SCREENSHOT_PATH = "/tmp/gipsy_screen.png"
+OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
+VISION_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:9b")
 
 APP_ALIASES = {
     "terminal": "Terminal",
@@ -117,3 +124,78 @@ def run_quick_action(action: str, target: str = "") -> dict:
             return {"success": False, "error": str(e)}
 
     return {"success": False, "error": f"OS '{current_os}' not supported."}
+
+
+def capture_screen(question: str = "Describe what is currently visible on the screen.") -> dict:
+    if platform.system() != "Darwin":
+        return {"success": False, "error": "Screen capture is only supported on macOS."}
+
+    clean_question = (question or "Describe what is currently visible on the screen.").strip()
+
+    try:
+        if os.path.exists(SCREENSHOT_PATH):
+            os.remove(SCREENSHOT_PATH)
+
+        subprocess.run(
+            ["screencapture", "-x", SCREENSHOT_PATH],
+            capture_output=True,
+            text=True,
+            timeout=10,
+        )
+
+        if not os.path.isfile(SCREENSHOT_PATH) or os.path.getsize(SCREENSHOT_PATH) == 0:
+            return {
+                "success": False,
+                "error": (
+                    "Screen capture failed because macOS Screen Recording permission is missing. "
+                    "Please enable it in System Settings -> Privacy & Security -> Screen Recording."
+                ),
+            }
+
+        with open(SCREENSHOT_PATH, "rb") as img_file:
+            encoded_image = base64.b64encode(img_file.read()).decode("utf-8")
+
+        resp = httpx.post(
+            f"{OLLAMA_BASE_URL}/api/chat",
+            json={
+                "model": VISION_MODEL,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": (
+                            "Answer concisely in 1 to 2 plain sentences with no markdown or emojis, "
+                            f"based strictly on this screenshot: {clean_question}"
+                        ),
+                        "images": [encoded_image],
+                    }
+                ],
+                "stream": False,
+                "think": False,
+                "options": {"num_ctx": 8192, "temperature": 0.2},
+            },
+            timeout=45.0,
+        )
+
+        if resp.status_code != 200:
+            return {
+                "success": False,
+                "error": f"Vision model returned HTTP {resp.status_code}.",
+            }
+
+        analysis = resp.json().get("message", {}).get("content", "").strip().replace("*", "")
+        if not analysis:
+            return {"success": False, "error": "Vision model returned an empty description."}
+
+        return {
+            "success": True,
+            "question": clean_question,
+            "analysis": analysis,
+        }
+    except Exception as e:
+        return {"success": False, "error": str(e)}
+    finally:
+        if os.path.exists(SCREENSHOT_PATH):
+            try:
+                os.remove(SCREENSHOT_PATH)
+            except OSError:
+                pass

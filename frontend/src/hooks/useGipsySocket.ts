@@ -207,6 +207,14 @@ export function useGipsySocket(url: string = 'ws://127.0.0.1:8000/ws') {
           } else if (msgType === 'admin_auth_result') {
             setAdminChallenge(null)
             addLog(payload.success ? 'action' : 'system', payload.message || 'Authorization result')
+          } else if (msgType === 'screen_capture_start') {
+            if (isTauri()) {
+              invoke('set_window_visible', { visible: false }).catch(() => {})
+            }
+          } else if (msgType === 'screen_capture_end') {
+            if (isTauri()) {
+              invoke('set_window_visible', { visible: true }).catch(() => {})
+            }
           } else if (msgType === 'pong') {
             const delta = Math.max(1, Date.now() - pingTimestampRef.current)
             setTelemetry((prev) => ({ ...prev, pingMs: delta, isConnected: true }))

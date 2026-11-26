@@ -1,4 +1,5 @@
 from tools.os_tools import (
+    capture_screen,
     get_system_telemetry,
     open_application,
     run_quick_action,
@@ -73,6 +74,23 @@ OLLAMA_TOOLS = [
             },
         },
     },
+    {
+        "type": "function",
+        "function": {
+            "name": "capture_screen",
+            "description": "Capture and visually analyze the user's current macOS screen to read error messages, inspect open windows, or answer questions about what is visible.",
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "question": {
+                        "type": "string",
+                        "description": "Specific question or focus for inspecting the screenshot.",
+                    }
+                },
+                "required": ["question"],
+            },
+        },
+    },
 ]
 
 TOOL_MAPPING = {
@@ -80,7 +98,10 @@ TOOL_MAPPING = {
     "get_system_telemetry": get_system_telemetry,
     "set_volume": set_volume,
     "run_quick_action": run_quick_action,
+    "capture_screen": capture_screen,
 }
+
+AVAILABLE_TOOLS = TOOL_MAPPING
 
 
 def execute_tool(name: str, arguments: dict) -> dict:
